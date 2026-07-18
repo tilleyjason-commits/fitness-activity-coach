@@ -1,0 +1,407 @@
+{
+  "title": "Fitness Activity Coach — Evaluation Rules",
+  "version": "1.0.0",
+  "last_updated": "2026-07-18",
+  "source": "MASS Research Review Vol 9-10, Phase 1-3 coaching program for Jason Tilley",
+  "athlete_profile": {
+    "age": 47,
+    "height_cm": 180.3,
+    "weight_lb": 208,
+    "bodyfat_pct": 28,
+    "goal_bodyfat_pct": 15,
+    "goal_weight_lb": 185,
+    "training_years": 2,
+    "training_schedule": "M-F 11:00-12:00",
+    "target_calories": 2500,
+    "target_protein_g": 200,
+    "target_carbs_g": 275,
+    "target_fat_g": 65
+  },
+  "rules": {
+    "nutrition": [
+      {
+        "id": "protein_daily_target",
+        "domain": "nutrition",
+        "description": "Daily protein minimum",
+        "trigger": "log.nutrition.exists",
+        "evaluate": "daily_protein >= 195",
+        "pass": "Protein at {daily_protein}g — within target (195-205g) ✓",
+        "fail": "Protein at {daily_protein}g — below 195g target. Try adding an extra serving at post-gym meal or dinner.",
+        "severity": "high",
+        "evidence": "ISSN Position Stand (2017): 1.6-2.2 g/kg/day for athletes. Refalo/Trexler/Helms (2025): 2.0 g/kg ideal in deficit. Trexler MASS V10I7: 'Diminishing returns above ~1.6 g/kg/day, 2.0-2.2 safe for deficit.'"
+      },
+      {
+        "id": "calories_daily_range",
+        "domain": "nutrition",
+        "description": "Daily calorie target range",
+        "trigger": "log.nutrition.exists",
+        "evaluate": "daily_calories >= 2350 AND daily_calories <= 2650",
+        "pass": "Calories at {daily_calories} — within recomposition range ✓",
+        "fail": "Calories at {daily_calories}. Target ~2500. {daily_calories > 2650 ? 'Too high: tighten dinner portion or skip extras.' : 'Too low: risk of muscle loss in deficit >500 cal/day.'}",
+        "severity": "high",
+        "evidence": "Helms MASS V10I7: '~135 kcal/day deficit produces body recomposition. Deficit >500 kcal/day limits muscle gain.' Koehler & Murphy (2022) meta-regression: deficit up to 150 kcal/day still permits lean mass gain."
+      },
+      {
+        "id": "meal_timing_pre_gym",
+        "domain": "nutrition",
+        "description": "Pre-gym snack timing (10:15-10:30)",
+        "trigger": "log.training.time == '11:00'",
+        "evaluate": "pre_gym_snack_time >= '10:00' AND pre_gym_snack_time <= '10:45'",
+        "pass": "Pre-gym snack at {pre_gym_snack_time} ✓",
+        "fail": "Pre-gym snack at {pre_gym_snack_time}. Target 10:15 — gives 45 min for digestion before 11am lifting.",
+        "severity": "medium",
+        "evidence": "Van Loon (2011): Pre-exercise protein timing affects amino acid availability during and after training."
+      },
+      {
+        "id": "meal_timing_post_gym",
+        "domain": "nutrition",
+        "description": "Post-gym meal within 30-60 min",
+        "trigger": "log.training.completed == true",
+        "evaluate": "post_gym_meal_time <= '12:30'",
+        "pass": "Post-gym meal at {post_gym_meal_time} — within MPS peak window ✓",
+        "fail": "Post-gym meal at {post_gym_meal_time} — beyond 60 min post-exercise. Earlier is better for MPS.",
+        "severity": "medium",
+        "evidence": "ISSN Position Stand on Nutrient Timing (2017): Pre- and post-exercise nutrition supports MPS. Schoenfeld et al. (2013): Total daily protein > timing precision."
+      },
+      {
+        "id": "snack_3pm_critical",
+        "domain": "nutrition",
+        "description": "3pm protein-fiber snack presence",
+        "trigger": "log.day.complete",
+        "evaluate": "snack_3pm_logged == true",
+        "pass": "3pm snack logged ✓ — glucose crash prevented",
+        "fail": "3pm snack MISSED. This is the #1 candy craving intervention. Protein + fiber at 3pm prevents 4pm glucose crash that triggers reactive sugar eating. Log it tomorrow.",
+        "severity": "high",
+        "evidence": "Paddon-Jones et al. (2008): Protein improves satiety and glucose regulation. Hägele et al. (2025, Nat Metab): High-protein meals stabilize postprandial glucose."
+      },
+      {
+        "id": "evening_casein",
+        "domain": "nutrition",
+        "description": "Pre-bed casein (30-40g)",
+        "trigger": "log.day.complete",
+        "evaluate": "casein_taken == true",
+        "pass": "Casein taken ✓ — overnight glucose stabilized",
+        "fail": "Casein MISSED at 8pm. Without it: blood glucose drifts down around 3am → cortisol spike → you wake up. This is the single most impactful intervention for your sleep quality and the 3am wake. Set a phone alarm: 'CASEIN NOW' at 8pm.",
+        "severity": "critical",
+        "evidence": "Trommelen & van Loon (2016): Pre-sleep casein increases overnight MPS by ~22%. Res et al. (2012, J Nutr): Pre-sleep protein before sleep stimulates MPS overnight. Helms MASS V10I7: Body recomposition article discusses glucose counter-regulation mechanism."
+      },
+      {
+        "id": "dinner_one_plate",
+        "domain": "nutrition",
+        "description": "Family dinner — single plate, no seconds",
+        "trigger": "log.dinner_logged == true",
+        "evaluate": "dinner_plates == 1",
+        "pass": "One plate ✓ — dinner structured",
+        "fail": "{dinner_plates} plates at dinner. Target: 1 plate. Protein + veg first, carbs last. Wait 10min before deciding if you need more.",
+        "severity": "medium",
+        "evidence": "Program custom rule based on analysis of Jason's untracked restaurant dinners being the key variable in 4-month stall."
+      },
+      {
+        "id": "dinner_protein_first",
+        "domain": "nutrition",
+        "description": "Dinner — protein and veg before carbs",
+        "trigger": "log.dinner_logged == true",
+        "evaluate": "dinner_protein_first == true",
+        "pass": "Protein + veg first ✓",
+        "fail": "Eat protein and vegetables before touching carbs/starch at dinner. This naturally reduces total intake without tracking.",
+        "severity": "low",
+        "evidence": "Paddon-Jones (2008): Protein first improves satiety signaling."
+      },
+      {
+        "id": "candy_cravings_monitor",
+        "domain": "nutrition",
+        "description": "Afternoon candy craving episodes",
+        "trigger": "log.day.complete",
+        "evaluate": "candy_cravings_today == 0",
+        "pass": "No candy cravings ✓ — 3pm snack doing its job",
+        "fail": "{candy_cravings_today} candy craving episodes. 3pm snack should prevent these. Did you eat the 3pm snack? If yes, try increasing protein at lunch or adding 5g fiber to the 3pm snack.",
+        "severity": "medium",
+        "evidence": "Kohanmoo et al. (2020, Physiol Behav): Short- and long-term protein consumption reduces appetite and appetite-regulating gastrointestinal hormones."
+      }
+    ],
+    "training": [
+      {
+        "id": "training_compliance",
+        "domain": "training",
+        "description": "Training session adherence (M-F 11am)",
+        "trigger": "log.day_of_week >= 'Monday' AND log.day_of_week <= 'Friday'",
+        "evaluate": "training_done == true",
+        "pass": "Training logged for {day} ✓",
+        "fail": "Training MISSED on {day}. Scheduled 11am at commercial gym. If recovering from illness or excessive fatigue, rest is OK — otherwise, progress requires consistency.",
+        "severity": "high",
+        "evidence": "Schoenfeld (2010): Training consistency is the primary driver of long-term hypertrophy. Helms MASS V10I7: 'Body recomposition relies on a strong anabolic stimulus and shifting fuel use to body fat.'"
+      },
+      {
+        "id": "weekly_volume_check",
+        "domain": "training",
+        "description": "Total weekly sets per muscle group (12-16 range)",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "weekly_sets_per_muscle >= 12 AND weekly_sets_per_muscle <= 16",
+        "pass": "Volume per muscle: {weekly_sets_per_muscle} sets — within 12-16 target ✓",
+        "fail": "Volume per muscle: {weekly_sets_per_muscle} sets. Target 12-16. {weekly_sets_per_muscle < 12 ? 'Not enough stimulus for growth. Add an extra exercise or set.' : 'Excessive for deficit — may impair recovery. Drop 1-2 sets.'}",
+        "severity": "high",
+        "evidence": "Schoenfeld, Ogborn, Krieger (2017, PMID 27433992): Graded dose-response from <5 sets/week → 5-9 → 10+. 10+ sets/week/muscle produces superior hypertrophy. Schoenfeld (2010): Higher volume relationships weaken when equated for frequency."
+      },
+      {
+        "id": "rir_compliance_compounds",
+        "domain": "training",
+        "description": "RIR 1-2 on compound lifts",
+        "trigger": "log.training.completed",
+        "evaluate": "compound_rir >= 1 AND compound_rir <= 2",
+        "pass": "Compounds at RIR {compound_rir} ✓",
+        "fail": "Compounds at RIR {compound_rir}. Target 1-2 RIR on compounds. In a deficit, excessive proximity to failure increases fatigue without additional hypertrophy benefit.",
+        "severity": "medium",
+        "evidence": "Grgic, Schoenfeld et al. (2022, PMID 33497853): Failure NOT required for hypertrophy. 0-2 RIR produces equal gains. Refalo/Trexler/Helms (2025): In a deficit, excessive fatigue impairs recovery."
+      },
+      {
+        "id": "rir_compliance_isolation",
+        "domain": "training",
+        "description": "RIR 0-1 on isolation lifts",
+        "trigger": "log.training.completed",
+        "evaluate": "isolation_rir >= 0 AND isolation_rir <= 1",
+        "pass": "Isolations at RIR {isolation_rir} ✓",
+        "fail": "Isolations at RIR {isolation_rir}. Target 0-1. Isolations are safer to push to failure since they don't tax the CNS as heavily.",
+        "severity": "low",
+        "evidence": "Program design principle. Helms MASS V10I7: Biceps respond to high volume + proximity to failure."
+      },
+      {
+        "id": "double_progression_adherence",
+        "domain": "training",
+        "description": "Double progression — reps before weight",
+        "trigger": "log.training.completed",
+        "evaluate": "double_progression_followed == true",
+        "pass": "Double progression pattern followed ✓",
+        "fail": "Double progression: add reps before adding weight. If you increased weight but dropped below the rep range, back off. Hit the top of the rep range for 2 sessions before adding 5%.",
+        "severity": "medium",
+        "evidence": "Helms et al. (2020): Progressive overload is the primary driver of hypertrophy. Double progression is the standard implementation for body recomposition phases."
+      },
+      {
+        "id": "knee_safe_exercises",
+        "domain": "training",
+        "description": "No barbell squats — use knee-safe alternatives",
+        "trigger": "log.training.completed",
+        "evaluate": "barbell_squat_done != true",
+        "pass": "No barbell squats ✓ — knee-safe choices",
+        "fail": "Barbell squat logged. Your knee pain history indicates leg press + Bulgarian split squat + leg extension as safer alternatives.",
+        "severity": "high",
+        "evidence": "Program custom rule based on Jason's knee pain history and self-correction in training log. Comerford & Mottram (2012): Movement screening and exercise selection for joint health."
+      },
+      {
+        "id": "shoulder_safe_exercises",
+        "domain": "training",
+        "description": "No barbell OHP — use DB neutral grip press",
+        "trigger": "log.training.completed",
+        "evaluate": "barbell_ohp_done != true",
+        "pass": "No barbell OHP ✓ — shoulder-safe choices",
+        "fail": "Barbell OHP logged. Your shoulder pain history indicates DB neutral-grip press as a safer alternative. Consider reducing weight.",
+        "severity": "high",
+        "evidence": "Program custom rule based on Jason's shoulder pain."
+      },
+      {
+        "id": "face_pulls_twice_weekly",
+        "domain": "training",
+        "description": "Face pulls 2x/week for shoulder health",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "weekly_face_pulls >= 2",
+        "pass": "Face pulls {weekly_face_pulls}x this week ✓",
+        "fail": "Face pulls only {weekly_face_pulls}x this week. Target 2x. External rotation work prevents shoulder impingement and balances all the pressing.",
+        "severity": "low",
+        "evidence": "Kibler et al. (2013): Scapular muscle balance important for shoulder health. Face pulls target external rotation and scapular retraction."
+      }
+    ],
+    "sleep": [
+      {
+        "id": "caffeine_cutoff",
+        "domain": "sleep",
+        "description": "No caffeine after 2:00pm",
+        "trigger": "log.last_caffeine_time.exists",
+        "evaluate": "last_caffeine_time < '14:00'",
+        "pass": "Last caffeine at {last_caffeine_time} — cutoff respected ✓",
+        "fail": "Caffeine at {last_caffeine_time} — PAST 2pm cutoff. Caffeine half-life at 47 is ~6 hours. Caffeine at 2:30pm = 50% still active at 8:30pm, 25% at 11pm. That's enough to disrupt deep sleep even if you fall asleep. Cut off at 2pm sharp.",
+        "severity": "high",
+        "evidence": "Drake et al. (2013, J Clin Sleep Med): Caffeine 6 hours before bed significantly disrupts sleep. At age 47, caffeine clearance is slower — half-life averages 6 hours vs 4.5 at 25."
+      },
+      {
+        "id": "bedtime_consistency",
+        "domain": "sleep",
+        "description": "Bedtime within ±30 min of 10pm",
+        "trigger": "log.sleep.bedtime.exists",
+        "evaluate": "bedtime >= '21:30' AND bedtime <= '22:30'",
+        "pass": "Bedtime {bedtime} — within window ✓",
+        "fail": "Bedtime {bedtime} — outside 10:00 ± 30 min window. Consistent bedtimes improve sleep quality and cortisol rhythm.",
+        "severity": "medium",
+        "evidence": "Buysse (2014): Sleep consistency is a key component of sleep health. Irregular bedtimes disrupt circadian rhythms."
+      },
+      {
+        "id": "wake_time_consistency",
+        "domain": "sleep",
+        "description": "Wake time within ±30 min of 6am",
+        "trigger": "log.sleep.waketime.exists",
+        "evaluate": "waketime >= '05:30' AND waketime <= '06:30'",
+        "pass": "Wake time {waketime} — consistent ✓",
+        "fail": "Wake time {waketime} — outside 6:00 ± 30 min.",
+        "severity": "low",
+        "evidence": "Consistent wake time reinforces circadian phase."
+      },
+      {
+        "id": "early_morning_waking_monitor",
+        "domain": "sleep",
+        "description": "3-4am wake frequency (target: 0)",
+        "trigger": "log.day.complete",
+        "evaluate": "early_wake == false",
+        "pass": "No early waking ✓ — casein working",
+        "fail": "Woke at {wake_time} early. 3am wake = blood glucose dip → cortisol spike. Did you take casein at 8pm? If yes, try increasing casein to 40g or adding a small complex carb. If no: this is why. Start casein tonight.",
+        "severity": "critical",
+        "evidence": "Van Loon (2016): Pre-sleep casein attenuates overnight cortisol spikes by maintaining stable blood glucose. Consitt et al. (2022, J Int Soc Sports Nutr): Protein timing for glucose regulation."
+      },
+      {
+        "id": "screen_before_bed",
+        "domain": "sleep",
+        "description": "No screens 30 min before bed",
+        "trigger": "log.sleep.bedtime.exists",
+        "evaluate": "last_screen_time <= '21:30'",
+        "pass": "Screens off by {last_screen_time} ✓",
+        "fail": "Screens on at {last_screen_time}. Blue light suppresses melatonin production. Put phone in the kitchen, not the bedroom.",
+        "severity": "medium",
+        "evidence": "Chang et al. (2015, PNAS): Evening blue light exposure suppresses melatonin and shifts circadian rhythms. Higuchi et al. (2005): Older adults are more sensitive to blue light suppression."
+      },
+      {
+        "id": "sleep_quality_score",
+        "domain": "sleep",
+        "description": "Subjective sleep quality score (1-5)",
+        "trigger": "log.sleep.quality.exists",
+        "evaluate": "sleep_quality >= 3",
+        "pass": "Sleep quality: {sleep_quality}/5 ✓",
+        "fail": "Sleep quality: {sleep_quality}/5. {sleep_quality <= 2 ? 'Poor sleep. Check: caffeine after 2pm? Casein taken? Screens before bed? Stress?' : 'Below target. Check the 3 pillars: caffeine cutoff, casein, screens.'}",
+        "severity": "medium",
+        "evidence": "Sleep quality is the primary recovery marker in the program."
+      }
+    ],
+    "supplements": [
+      {
+        "id": "creatine_daily",
+        "domain": "supplements",
+        "description": "5g creatine monohydrate daily",
+        "trigger": "log.day.complete",
+        "evaluate": "creatine_taken == true",
+        "pass": "Creatine ✓",
+        "fail": "Creatine MISSED. 5g/day consistent — no loading or cycling needed. Take at any consistent time.",
+        "severity": "medium",
+        "evidence": "ISSN Position Stand on Creatine (2017, PMC5469049): 5g/day creatine monohydrate is the A+ supplement for strength and hypertrophy."
+      },
+      {
+        "id": "vitamin_d_daily",
+        "domain": "supplements",
+        "description": "3,000 IU vitamin D3 daily",
+        "trigger": "log.day.complete",
+        "evaluate": "vitamin_d_taken == true",
+        "pass": "Vitamin D ✓",
+        "fail": "Vitamin D MISSED. 3,000 IU with breakfast. Deficiency risk higher at 28% BF (sequestered in adipose).",
+        "severity": "low",
+        "evidence": "Holick et al. (2011): Vitamin D deficiency common at higher body fat. 2,000-4,000 IU/day for adults."
+      },
+      {
+        "id": "magnesium_glycinate_bed",
+        "domain": "supplements",
+        "description": "200-400mg magnesium glycinate before bed",
+        "trigger": "log.sleep.bedtime.exists",
+        "evaluate": "magnesium_taken == true",
+        "pass": "Magnesium ✓",
+        "fail": "Magnesium MISSED. 200-400mg magnesium glycinate 30min before bed → better sleep quality.",
+        "severity": "low",
+        "evidence": "Abbasi et al. (2012): Magnesium supplementation improves sleep quality in elderly adults. Glycinate form has highest bioavailability."
+      }
+    ],
+    "recovery": [
+      {
+        "id": "weekly_weight_change",
+        "domain": "recovery",
+        "description": "Weekly weight change rate (7-day avg)",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "weekly_weight_change_lbs >= -0.8 AND weekly_weight_change_lbs <= -0.1",
+        "pass": "Weight change: {weekly_weight_change_lbs} lb this week — in range ✓",
+        "fail": "Weight change: {weekly_weight_change_lbs} lb/week. Target -0.3 to -0.6 lb/week. {weekly_weight_change < -0.8 ? 'Too fast — deficit too large. Add 150-200 cal/day.' : 'Too slow — tighten dinner portion or reduce 100 cal. Wait 3 weeks before adjusting.'}",
+        "severity": "high",
+        "evidence": "Helms MASS V10I7: Body recomposition requires modest deficit (135-356 cal/day). Fast weight loss = muscle loss."
+      },
+      {
+        "id": "waist_trend_down",
+        "domain": "recovery",
+        "description": "Waist circumference weekly trend",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "waist_change_inches < 0",
+        "pass": "Waist {waist_change_inches > 0 ? 'up' : 'down'} {abs(waist_change_inches)}\" ✓ — trending in right direction",
+        "fail": "Waist unchanged or up this week. If weight is stable but waist is the same or larger after 3+ weeks, deficit may need adjustment or dinner system needs tightening.",
+        "severity": "medium",
+        "evidence": "Waist circumference is the primary recomposition metric — it tracks fat loss independent of muscle gain (which may mask scale changes)."
+      },
+      {
+        "id": "energy_level_daily",
+        "domain": "recovery",
+        "description": "Daily subjective energy (1-5)",
+        "trigger": "log.day.complete",
+        "evaluate": "energy_score >= 3",
+        "pass": "Energy: {energy_score}/5 ✓",
+        "fail": "Energy: {energy_score}/5. Low energy + poor sleep + dropping performance = deficit too large or recovery insufficient. Consider diet break (maintenance for 1-2 weeks).",
+        "severity": "medium",
+        "evidence": "Trexler et al. (2014, JISSN): Metabolic adaptation markers include lethargy and reduced performance."
+      },
+      {
+        "id": "stress_level_daily",
+        "domain": "recovery",
+        "description": "Daily subjective stress (1-5)",
+        "trigger": "log.day.complete",
+        "evaluate": "stress_score <= 3",
+        "pass": "Stress: {stress_score}/5 ✓",
+        "fail": "Stress: {stress_score}/5. High stress increases cortisol, impairs recovery, and makes body recomposition harder. Consider 10-min walk, breathing exercise, or a deload day.",
+        "severity": "medium",
+        "evidence": "Stults-Kolehmainen & Bartholomew (2012): Psychological stress impairs recovery from resistance training."
+      },
+      {
+        "id": "hunger_level_daily",
+        "domain": "recovery",
+        "description": "Daily subjective hunger (1-5)",
+        "trigger": "log.day.complete",
+        "evaluate": "hunger_score <= 3",
+        "pass": "Hunger: {hunger_score}/5 ✓",
+        "fail": "Hunger: {hunger_score}/5. High hunger = deficit may be too aggressive. Add 100-200 cal (priority: protein or vegetables for volume). Check 3pm snack compliance.",
+        "severity": "low",
+        "evidence": "Helms et al. (2014): Hunger management is critical for diet adherence."
+      },
+      {
+        "id": "performance_trend_weekly",
+        "domain": "recovery",
+        "description": "Weekly performance trend (reps/weight)",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "weekly_performance_trend >= 'stable'",
+        "pass": "Performance trend: {weekly_performance_trend} ✓",
+        "fail": "Performance DROPPING 2+ reps across all lifts for 2 weeks. Possible causes: deficit too large, insufficient sleep, accumulated fatigue. Action: deload week OR add 200 cal/day for 1 week and monitor.",
+        "severity": "high",
+        "evidence": "Zourdos et al. (2023): Performance drops across multiple lifts signal accumulated fatigue. Helms: 'If everything is going wrong at once, it's recovery, not the program.'"
+      }
+    ],
+    "weekly": [
+      {
+        "id": "weekly_compliance_summary",
+        "domain": "summary",
+        "description": "Weekly adherence score",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "weekly_compliance_pct >= 80",
+        "pass": "Weekly compliance: {weekly_compliance_pct}% — great week! ✓",
+        "fail": "Weekly compliance: {weekly_compliance_pct}%. Target ≥80%. {weekly_compliance_pct < 60 ? 'Significant gaps — identify the blockers and fix one at a time.' : 'Near target. One area to focus on next week.'}",
+        "severity": "medium",
+        "evidence": "Adherence is the strongest predictor of long-term results in exercise science."
+      },
+      {
+        "id": "weekly_priority",
+        "domain": "summary",
+        "description": "Weekly #1 priority for improvement",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "true",
+        "pass": "—",
+        "fail": "Your top priority this week: {weakest_area}. {weakest_area == 'casein' ? 'Missing casein correlates perfectly with 3am wake-ups. Set a phone alarm at 8pm saying CASEIN NOW.' : weakest_area == '3pm_snack' ? 'The 3pm snack is your candy craving intervention. Prep them on Sunday for the week.' : weakest_area == 'caffeine' ? 'No caffeine after 2pm. Switch to herbal tea or decaf.' : weakest_area == 'training' ? 'You missed {missed_sessions} sessions this week. Aim for 5/5 next week.' : weakest_area == 'protein' ? 'Aim for 200g/day. Start lunch with protein.' : 'Keep doing what you did this week.'}",
+        "severity": "info"
+      }
+    ]
+  }
+}

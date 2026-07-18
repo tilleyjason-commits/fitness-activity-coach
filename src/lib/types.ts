@@ -1,0 +1,125 @@
+/** TypeScript types mirroring the Supabase schema (see supabase/migrations). */
+
+export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'info';
+
+export const SEVERITY_ORDER: Record<Severity, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4,
+};
+
+export interface Profile {
+  id: string;
+  age: number | null;
+  height_cm: number | null;
+  weight_lb: number | null;
+  bodyfat_pct: number | null;
+  goal_bodyfat_pct: number | null;
+  goal_weight_lb: number | null;
+  training_years: number | null;
+  training_time: string | null;
+}
+
+export interface DailyLog {
+  id: string;
+  user_id: string;
+  log_date: string;
+  day_of_week: string | null;
+  training_done: boolean;
+  training_session_type: string | null;
+  compound_rir: number | null;
+  isolation_rir: number | null;
+  double_progression_followed: boolean | null;
+  barbell_squat_done: boolean;
+  barbell_ohp_done: boolean;
+  daily_calories: number | null;
+  daily_protein_g: number | null;
+  daily_carbs_g: number | null;
+  daily_fat_g: number | null;
+  pre_gym_snack_time: string | null;
+  post_gym_meal_time: string | null;
+  snack_3pm_logged: boolean;
+  casein_taken: boolean;
+  dinner_logged: boolean;
+  dinner_plates: number;
+  dinner_protein_first: boolean;
+  candy_cravings_today: number;
+  creatine_taken: boolean;
+  vitamin_d_taken: boolean;
+  magnesium_taken: boolean;
+  last_caffeine_time: string | null;
+  caffeine_cutoff_respected: boolean | null;
+  bedtime: string | null;
+  waketime: string | null;
+  last_screen_time: string | null;
+  early_wake: boolean;
+  sleep_quality: number | null;
+  energy_score: number | null;
+  stress_score: number | null;
+  hunger_score: number | null;
+  weekly_weight_lb: number | null;
+  weekly_waist_inches: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+/** Insert/upsert shape: id and created_at are DB-generated. */
+export type DailyLogInsert = Partial<Omit<DailyLog, 'id' | 'created_at'>> & {
+  user_id: string;
+  log_date: string;
+};
+
+export interface ExerciseLog {
+  id: string;
+  daily_log_id: string;
+  exercise_name: string;
+  sets_completed: number | null;
+  target_sets: number | null;
+  reps_completed: number | null;
+  target_reps: string | null;
+  weight_lb: number | null;
+  rir: number | null;
+  notes: string | null;
+}
+
+export type ExerciseLogInsert = Omit<ExerciseLog, 'id'>;
+
+export interface WeeklySummary {
+  id: string;
+  user_id: string;
+  week_start: string;
+  training_compliance_pct: number | null;
+  protein_avg_g: number | null;
+  calories_avg: number | null;
+  casein_compliance_pct: number | null;
+  snack_3pm_compliance_pct: number | null;
+  caffeine_cutoff_pct: number | null;
+  sleep_quality_avg: number | null;
+  candy_cravings_total: number | null;
+  weight_change_lb: number | null;
+  waist_change_inches: number | null;
+  compliance_pct: number | null;
+  weakest_area: string | null;
+  created_at: string;
+}
+
+export type WeeklySummaryInsert = Partial<Omit<WeeklySummary, 'id' | 'created_at'>> & {
+  user_id: string;
+  week_start: string;
+};
+
+export interface Recommendation {
+  id: string;
+  user_id: string;
+  log_date: string;
+  rule_id: string;
+  message: string;
+  severity: Severity;
+  passed: boolean;
+  dismissed: boolean;
+  created_at: string;
+}
+
+export type RecommendationInsert = Omit<Recommendation, 'id' | 'created_at'>;
