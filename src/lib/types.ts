@@ -119,6 +119,65 @@ export type WeeklySummaryInsert = Partial<Omit<WeeklySummary, 'id' | 'created_at
   week_start: string;
 };
 
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'post_gym' | 'snack';
+
+export interface MealLog {
+  id: string;
+  daily_log_id: string;
+  meal_slot: MealSlot;
+  meal_time: string | null;
+  raw_input: string | null;
+  total_calories: number;
+  total_protein_g: number;
+  total_carbs_g: number;
+  total_fat_g: number;
+  created_at: string;
+}
+
+/** Upsert shape: id and created_at are DB-generated. */
+export type MealLogInsert = Partial<Omit<MealLog, 'id' | 'created_at'>> & {
+  daily_log_id: string;
+  meal_slot: MealSlot;
+};
+
+export interface MealFood {
+  id: string;
+  meal_log_id: string;
+  food_name: string;
+  quantity: number | null;
+  unit: string | null;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  confidence: 'high' | 'medium' | 'low' | null;
+  created_at: string;
+}
+
+export type MealFoodInsert = Omit<MealFood, 'id' | 'created_at'>;
+
+/** One food row as returned by the calculate-macros Edge Function. */
+export interface AIFood {
+  food_name: string;
+  quantity: number;
+  unit: string;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+export interface MacrosFromAI {
+  foods: AIFood[];
+  meal_total: {
+    calories: number;
+    protein_g: number;
+    carbs_g: number;
+    fat_g: number;
+  };
+}
+
 export interface Recommendation {
   id: string;
   user_id: string;

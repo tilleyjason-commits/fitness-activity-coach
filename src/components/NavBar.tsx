@@ -1,5 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
-import { BarChart3, ClipboardList, Home, Settings, type LucideIcon } from 'lucide-react';
+import {
+  BarChart3,
+  ClipboardList,
+  Home,
+  Settings,
+  UtensilsCrossed,
+  type LucideIcon,
+} from 'lucide-react';
 
 interface NavItem {
   to: string;
@@ -11,6 +18,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', icon: Home, isActive: (p) => p === '/' },
   { to: '/log/training', label: 'Log', icon: ClipboardList, isActive: (p) => p.startsWith('/log') },
+  { to: '/macros', label: 'Macros', icon: UtensilsCrossed, isActive: (p) => p === '/macros' },
   { to: '/weekly', label: 'Weekly', icon: BarChart3, isActive: (p) => p === '/weekly' },
   { to: '/settings', label: 'Settings', icon: Settings, isActive: (p) => p === '/settings' },
 ];
@@ -24,7 +32,7 @@ export function NavBar() {
       className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/95"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-auto grid w-full max-w-md grid-cols-4">
+      <div className="mx-auto grid w-full max-w-md grid-cols-5">
         {NAV_ITEMS.map(({ to, label, icon: Icon, isActive }) => {
           const active = isActive(pathname);
           return (

@@ -5,6 +5,12 @@ import type {
   DailyLogInsert,
   ExerciseLog,
   ExerciseLogInsert,
+  MacrosFromAI,
+  MealFood,
+  MealFoodInsert,
+  MealLog,
+  MealLogInsert,
+  MealSlot,
   Profile,
   Recommendation,
   RecommendationInsert,
@@ -199,6 +205,111 @@ export async function syncRecommendations(
 
   const refreshed = await getRecommendations(userId, logDate);
   return refreshed.filter((rec) => !rec.passed && !rec.dismissed);
+}
+
+/* ------------------------------------------------------------------ */
+/* Meal logs (AI macro tracker)                                        */
+/* ------------------------------------------------------------------ */
+
+export async function getMealLogs(dailyLogId: string): Promise<MealLog[]> {
+  const { data, error } = await supabase
+    .from('meal_logs')
+    .select('*')
+    .eq('daily_log_id', dailyLogId)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MealLog[];
+}
+
+export async function getMealFoods(mealLogIds: string[]): Promise<MealFood[]> {
+  if (mealLogIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('meal_foods')
+    .select('*')
+    .in('meal_log_id', mealLogIds)
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as MealFood[];
+}
+
+/** One row per (daily log, meal slot) — upsert keeps re-saves idempotent. */
+export async function upsertMealLog(log: MealLogInsert): Promise<MealLog> {
+  const { data, error } = await supabase
+    .from('meal_logs')
+    .upsert(log, { onConflict: 'daily_log_id,meal_slot' })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as MealLog;
+}
+
+/** Replace the food rows attached to one meal log. */
+export async function replaceMealFoods(
+  mealLogId: string,
+  foods: Omit<MealFoodInsert, 'meal_log_id'>[],
+): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from('meal_foods')
+    .delete()
+    .eq('meal_log_id', mealLogId);
+  if (deleteError) throw new Error(deleteError.message);
+  if (foods.length === 0) return;
+  const inserts: MealFoodInsert[] = foods.map((food) => ({ ...food, meal_log_id: mealLogId }));
+  const { error: insertError } = await supabase.from('meal_foods').insert(inserts);
+  if (insertError) throw new Error(insertError.message);
+}
+
+/** Delete one meal slot's log; meal_foods cascade in the DB. */
+export async function deleteMealLog(dailyLogId: string, mealSlot: MealSlot): Promise<void> {
+  const { error } = await supabase
+    .from('meal_logs')
+    .delete()
+    .eq('daily_log_id', dailyLogId)
+    .eq('meal_slot', mealSlot);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Re-sum every saved meal for the day into the daily_logs macro columns,
+ * which the evaluate engine reads (protein/calorie rules).
+ */
+export async function syncDailyTotals(dailyLogId: string): Promise<void> {
+  const meals = await getMealLogs(dailyLogId);
+  const totals = meals.reduce(
+    (acc, meal) => ({
+      calories: acc.calories + (meal.total_calories ?? 0),
+      protein: acc.protein + Number(meal.total_protein_g ?? 0),
+      carbs: acc.carbs + Number(meal.total_carbs_g ?? 0),
+      fat: acc.fat + Number(meal.total_fat_g ?? 0),
+    }),
+    { calories: 0, protein: 0, carbs: 0, fat: 0 },
+  );
+  const patch =
+    meals.length > 0
+      ? {
+          daily_calories: Math.round(totals.calories),
+          daily_protein_g: Math.round(totals.protein * 10) / 10,
+          daily_carbs_g: Math.round(totals.carbs * 10) / 10,
+          daily_fat_g: Math.round(totals.fat * 10) / 10,
+        }
+      : { daily_calories: null, daily_protein_g: null, daily_carbs_g: null, daily_fat_g: null };
+  const { error } = await supabase.from('daily_logs').update(patch).eq('id', dailyLogId);
+  if (error) throw new Error(error.message);
+}
+
+/** Ask the calculate-macros Edge Function (NVIDIA GLM-5.2) to parse a meal description. */
+export async function calculateMacros(
+  description: string,
+  mealSlot: MealSlot,
+): Promise<MacrosFromAI> {
+  const { data, error } = await supabase.functions.invoke<MacrosFromAI>('calculate-macros', {
+    body: { description, meal_slot: mealSlot },
+  });
+  if (error) throw new Error(error.message);
+  if (!data || !Array.isArray(data.foods)) {
+    throw new Error('Macro calculator returned an unexpected response.');
+  }
+  return data;
 }
 
 export async function upsertWeeklySummary(summary: WeeklySummaryInsert): Promise<WeeklySummary> {

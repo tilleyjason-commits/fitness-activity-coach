@@ -1,4 +1,5 @@
 import rulesJson from '../../rules/rules.json';
+import type { MealSlot } from './types';
 
 /** Athlete profile + macro targets shipped with the rules file. */
 export const ATHLETE_PROFILE = rulesJson.athlete_profile;
@@ -24,6 +25,32 @@ export const MEAL_TIMING = {
   bedtime: '22:00',
   waketime: '06:00',
 } as const;
+
+export const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'post_gym', 'snack'];
+
+export const MEAL_SLOT_LABELS: Record<MealSlot, string> = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+  post_gym: 'Post-Gym Meal',
+  snack: 'Snack',
+};
+
+export const MEAL_SLOT_ICONS: Record<MealSlot, string> = {
+  breakfast: '🌅',
+  lunch: '☀️',
+  dinner: '🌙',
+  post_gym: '💪',
+  snack: '🍎',
+};
+
+export const MEAL_SLOT_TIMES: Record<MealSlot, { start: string; hint: string }> = {
+  breakfast: { start: '07:00', hint: 'Pre-workout / morning meal' },
+  lunch: { start: '12:00', hint: 'Mid-day meal' },
+  dinner: { start: '18:00', hint: 'Evening meal' },
+  post_gym: { start: '12:00', hint: 'After training (~12:00)' },
+  snack: { start: '15:00', hint: '3pm snack' },
+};
 
 export type SessionType = 'Upper A' | 'Lower A' | 'Back + Biceps' | 'Upper B' | 'Lower B';
 

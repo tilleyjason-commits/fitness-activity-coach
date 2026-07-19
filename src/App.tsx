@@ -10,6 +10,7 @@ import LogSupplements from '~/pages/LogSupplements';
 import LogSleep from '~/pages/LogSleep';
 import LogSubjective from '~/pages/LogSubjective';
 import LogWeight from '~/pages/LogWeight';
+import MacroTrackerPage from '~/pages/MacroTrackerPage';
 import WeeklySummary from '~/pages/WeeklySummary';
 import Settings from '~/pages/Settings';
 
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/log/sleep" element={<LogSleep />} />
           <Route path="/log/subjective" element={<LogSubjective />} />
           <Route path="/log/weight" element={<LogWeight />} />
+          <Route path="/macros" element={<MacroTrackerPage />} />
           <Route path="/weekly" element={<WeeklySummary />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

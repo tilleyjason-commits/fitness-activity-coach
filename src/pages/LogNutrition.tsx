@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Loader2, Minus, Plus } from 'lucide-react';
+import { ChevronRight, Loader2, Minus, Plus, Sparkles } from 'lucide-react';
 import { useDailyLog } from '~/hooks/useDailyLog';
 import { toHHMM } from '~/lib/evaluate';
 import { MEAL_TIMING, TARGETS } from '~/lib/constants';
@@ -119,6 +119,24 @@ export default function LogNutrition() {
   return (
     <form onSubmit={handleSubmit}>
       <PageHeader title="Log Nutrition" subtitle={format(new Date(), 'EEEE, MMMM d')} backTo="/" />
+
+      <Link
+        to="/macros"
+        className="card mb-4 flex items-center justify-between gap-3 transition-colors hover:border-emerald-400 dark:hover:border-emerald-500"
+      >
+        <span className="flex items-center gap-3">
+          <Sparkles className="h-5 w-5 shrink-0 text-emerald-500" aria-hidden />
+          <span>
+            <span className="block text-sm font-semibold">
+              Log your meals with AI macro tracking
+            </span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Describe a meal and totals fill in automatically
+            </span>
+          </span>
+        </span>
+        <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+      </Link>
 
       <section className="card mb-4" aria-label="Protein">
         <div className="mb-2 flex items-baseline justify-between">
