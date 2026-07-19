@@ -1,8 +1,8 @@
 {
   "title": "Fitness Activity Coach — Evaluation Rules",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "last_updated": "2026-07-18",
-  "source": "MASS Research Review Vol 9-10, Phase 1-3 coaching program for Jason Tilley",
+  "source": "MASS Research Review Vol 9-10, Phase 1-3 coaching program for Jason Tilley. Extended with Bodybuilding & Nutrition Knowledge Base (2026).",
   "athlete_profile": {
     "age": 47,
     "height_cm": 180.3,
@@ -117,6 +117,39 @@
         "fail": "{candy_cravings_today} candy craving episodes. 3pm snack should prevent these. Did you eat the 3pm snack? If yes, try increasing protein at lunch or adding 5g fiber to the 3pm snack.",
         "severity": "medium",
         "evidence": "Kohanmoo et al. (2020, Physiol Behav): Short- and long-term protein consumption reduces appetite and appetite-regulating gastrointestinal hormones."
+      },
+      {
+        "id": "carb_pre_workout",
+        "domain": "nutrition",
+        "description": "Pre-workout carbohydrate intake around training",
+        "trigger": "log.training_done == true",
+        "evaluate": "pre_gym_snack_time != ''",
+        "pass": "Pre-workout fuel logged ✓",
+        "fail": "No pre-workout fuel logged. 1-2 g/kg carbohydrate in the 1-2 hours before training supports session quality.",
+        "severity": "medium",
+        "evidence": "Henselmans et al. (2022, Nutrients): carb pre-workout supports training quality."
+      },
+      {
+        "id": "protein_per_meal_distribution",
+        "domain": "nutrition",
+        "description": "Protein across 4-6 meals, ~0.4 g/kg per meal",
+        "trigger": "log.daily_protein_g > 100",
+        "evaluate": "meals_count >= 4 AND meals_count <= 6",
+        "pass": "Protein over {meals_count} meals ✓",
+        "fail": "Only {meals_count} meals. Target 4-6 at 32-45g protein each. Even distribution sustains MPS.",
+        "severity": "medium",
+        "evidence": "Schoenfeld & Aragon (2018, JISSN): '0.4 g/kg/meal, 4+ meals.'"
+      },
+      {
+        "id": "fat_minimum_floor",
+        "domain": "nutrition",
+        "description": "Daily fat >= 0.5 g/kg for hormone function",
+        "trigger": "log.daily_fat_g > 0",
+        "evaluate": "daily_fat_g >= 46",
+        "pass": "Fat at {daily_fat_g}g - above floor ✓",
+        "fail": "Fat at {daily_fat_g}g - below 46g minimum. Inadequate fat impairs testosterone. Minimum 0.5 g/kg/day.",
+        "severity": "high",
+        "evidence": "Helms et al. (2014, JISSN): 'Fat floor of ~0.5 g/kg/day for hormone function.'"
       }
     ],
     "training": [
@@ -207,6 +240,39 @@
         "fail": "Face pulls only {weekly_face_pulls}x this week. Target 2x. External rotation work prevents shoulder impingement and balances all the pressing.",
         "severity": "low",
         "evidence": "Kibler et al. (2013): Scapular muscle balance important for shoulder health. Face pulls target external rotation and scapular retraction."
+      },
+      {
+        "id": "rest_interval_compliance",
+        "domain": "training",
+        "description": "Rest intervals: 2-3min compounds, 1.5-2min isolation",
+        "trigger": "log.training_done == true",
+        "evaluate": "compound_rest >= 120 OR isolation_rest >= 90",
+        "pass": "Rest intervals adequate ✓",
+        "fail": "Rest too short. 2-3 min for compounds, 1.5-2 for isolation. Short rests limit per-set volume.",
+        "severity": "medium",
+        "evidence": "Schoenfeld (2016, JSCR): '3-min rest superior to 1-min for hypertrophy.' ISSN position stand."
+      },
+      {
+        "id": "deload_adherence",
+        "domain": "training",
+        "description": "Deload every 4-6 weeks when volume plateaus",
+        "trigger": "log.day_of_week == 'Sunday'",
+        "evaluate": "weeks_since_deload <= 6",
+        "pass": "{weeks_since_deload} weeks since last deload ✓",
+        "fail": "{weeks_since_deload} weeks without a deload. After 4-6 weeks of progression, take a deload week at 50-60% volume to dissipate fatigue.",
+        "severity": "medium",
+        "evidence": "Williams et al. (2019, Front Physiol): Periodized programs help manage fatigue."
+      },
+      {
+        "id": "session_duration_max",
+        "domain": "training",
+        "description": "Session duration 60-90 minutes",
+        "trigger": "log.training_done == true",
+        "evaluate": "session_minutes >= 45 AND session_minutes <= 105",
+        "pass": "Session {session_minutes} min ✓",
+        "fail": "Session {session_minutes} min. Target 60-90 min. Longer sessions increase cortisol without additional hypertrophic benefit.",
+        "severity": "low",
+        "evidence": "Hackney & Viru (2011): Prolonged exercise elevates cortisol and blunts MPS."
       }
     ],
     "sleep": [
@@ -310,6 +376,39 @@
         "fail": "Magnesium MISSED. 200-400mg magnesium glycinate 30min before bed → better sleep quality.",
         "severity": "low",
         "evidence": "Abbasi et al. (2012): Magnesium supplementation improves sleep quality in elderly adults. Glycinate form has highest bioavailability."
+      },
+      {
+        "id": "beta_alanine_compliance",
+        "domain": "supplements",
+        "description": "4-5 g/day beta-alanine for high-volume work",
+        "trigger": "log.day.complete",
+        "evaluate": "beta_alanine_taken == true",
+        "pass": "Beta-alanine ✓",
+        "fail": "Beta-alanine missed. 4-5 g/day increases intramuscular carnosine, buffers H+ during high-rep sets.",
+        "severity": "low",
+        "evidence": "ISSN position stand (2015): '4-6 g/day beta-alanine for 2-4 weeks elevates carnosine.'"
+      },
+      {
+        "id": "omega3_fish_oil",
+        "domain": "supplements",
+        "description": "2-3 g EPA+DHA daily",
+        "trigger": "log.day.complete",
+        "evaluate": "omega3_taken == true",
+        "pass": "Omega-3 ✓",
+        "fail": "Omega-3 missed. 2-3 g EPA+DHA/day supports recovery, inflammation modulation, and may preserve lean mass during deficit.",
+        "severity": "low",
+        "evidence": "Smith et al. (2011, AJCN): 'Fish oil supports MPS in older adults.' McGlory & Phillips (2016): Anti-catabolic in deficit."
+      },
+      {
+        "id": "caffeine_dose_monitor",
+        "domain": "supplements",
+        "description": "Caffeine 3-6 mg/kg pre-workout, 8-10hr before bed",
+        "trigger": "log.training_done == true",
+        "evaluate": "caffeine_mg_per_kg <= 6 AND last_caffeine_time < '14:00'",
+        "pass": "Caffeine {caffeine_mg_per_kg} mg/kg at {last_caffeine_time} ✓",
+        "fail": "Caffeine {caffeine_mg_per_kg} mg/kg {last_caffeine_time >= '14:00' ? 'after 2pm - disrupts sleep' : 'above 6 mg/kg - no additional benefit'}. Target 3-6 mg/kg, 60 min pre-workout, none after 2pm.",
+        "severity": "medium",
+        "evidence": "Guest et al. (2021, JISSN): '3-6 mg/kg caffeine 60 min pre-exercise.' Grgic (2025): 'Min effective dose ~2-3 mg/kg.'"
       }
     ],
     "recovery": [
@@ -378,6 +477,28 @@
         "fail": "Performance DROPPING 2+ reps across all lifts for 2 weeks. Possible causes: deficit too large, insufficient sleep, accumulated fatigue. Action: deload week OR add 200 cal/day for 1 week and monitor.",
         "severity": "high",
         "evidence": "Zourdos et al. (2023): Performance drops across multiple lifts signal accumulated fatigue. Helms: 'If everything is going wrong at once, it's recovery, not the program.'"
+      },
+      {
+        "id": "sleep_duration_hours",
+        "domain": "recovery",
+        "description": "7-9 hours per night",
+        "trigger": "log.sleep.bedtime.exists AND log.sleep.waketime.exists",
+        "evaluate": "sleep_hours >= 7 AND sleep_hours <= 9",
+        "pass": "Sleep duration {sleep_hours} hrs ✓",
+        "fail": "Sleep duration {sleep_hours} hrs. Target 7-9 hrs. <7 hrs increases cortisol ~21%, drops testosterone ~24%, and reduces MPS ~18% per single night of deprivation.",
+        "severity": "critical",
+        "evidence": "Pisanu et al. (2025, JCM): 'Sleep restriction 5-6 hrs/night increases cortisol, decreases anabolic hormones.' Lamon et al. (2021, Physiol Rep): '24% testosterone drop, 18% MPS reduction from single deprivation night.'"
+      },
+      {
+        "id": "full_rom_emphasis",
+        "domain": "recovery",
+        "description": "Exercises performed through full range of motion",
+        "trigger": "log.training_done == true",
+        "evaluate": "full_rom_followed == true",
+        "pass": "Full ROM ✓ — lengthened position emphasized",
+        "fail": "Partial ROM detected. Full ROM, especially through the lengthened/stretched position, produces superior hypertrophy. Control the eccentric through 2-4 seconds.",
+        "severity": "medium",
+        "evidence": "Wolf et al. (2023): 'Full ROM > partial for hypertrophy.' Ottinger et al. (2025): 'Lengthened partials comparable to full ROM.'"
       }
     ],
     "weekly": [

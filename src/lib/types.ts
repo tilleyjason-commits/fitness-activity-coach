@@ -47,6 +47,9 @@ export interface DailyLog {
   dinner_protein_first: boolean;
   candy_cravings_today: number;
   creatine_taken: boolean;
+  beta_alanine_taken: boolean;
+  omega3_taken: boolean;
+  caffeine_mg: number | null;
   vitamin_d_taken: boolean;
   magnesium_taken: boolean;
   last_caffeine_time: string | null;
@@ -59,6 +62,12 @@ export interface DailyLog {
   energy_score: number | null;
   stress_score: number | null;
   hunger_score: number | null;
+  meals_count: number | null;
+  compound_rest_sec: number | null;
+  isolation_rest_sec: number | null;
+  session_minutes: number | null;
+  full_rom_followed: boolean;
+  last_deload_date: string | null;
   weekly_weight_lb: number | null;
   weekly_waist_inches: number | null;
   notes: string | null;
