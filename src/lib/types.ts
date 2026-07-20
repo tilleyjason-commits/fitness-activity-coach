@@ -133,7 +133,14 @@ export type WeeklySummaryInsert = Partial<Omit<WeeklySummary, 'id' | 'created_at
   week_start: string;
 };
 
-export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'post_gym' | 'snack';
+export type MealSlot =
+  | 'breakfast'
+  | 'lunch'
+  | 'dinner'
+  | 'post_gym'
+  | 'snack'
+  | 'pre_workout_snack'
+  | 'bedtime_snack';
 
 export interface MealLog {
   id: string;

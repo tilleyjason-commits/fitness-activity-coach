@@ -16,7 +16,15 @@
 // Log hygiene: nothing user-supplied (meal descriptions), no auth headers, no
 // provider response bodies — only codes, statuses, and lengths.
 
-export const MEAL_SLOTS = ['breakfast', 'lunch', 'dinner', 'post_gym', 'snack'] as const;
+export const MEAL_SLOTS = [
+  'breakfast',
+  'lunch',
+  'dinner',
+  'post_gym',
+  'snack',
+  'pre_workout_snack',
+  'bedtime_snack',
+] as const;
 export type MealSlot = (typeof MEAL_SLOTS)[number];
 
 export interface AIFood {

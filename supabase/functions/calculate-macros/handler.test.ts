@@ -143,6 +143,30 @@ describe('calculate-macros handler', () => {
     expect(body.meal_total).toEqual({ calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 });
   });
 
+  it('accepts an authenticated pre_workout_snack request and passes that exact slot to the provider', async () => {
+    const handler = createMacroHandler(deps);
+    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'pre_workout_snack' }, AUTH));
+    expect(res.status).toBe(200);
+    expect(deps.callProvider).toHaveBeenCalledWith(DESCRIPTION, 'pre_workout_snack');
+  });
+
+  it('accepts an authenticated bedtime_snack request and passes that exact slot to the provider', async () => {
+    const handler = createMacroHandler(deps);
+    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'bedtime_snack' }, AUTH));
+    expect(res.status).toBe(200);
+    expect(deps.callProvider).toHaveBeenCalledWith(DESCRIPTION, 'bedtime_snack');
+  });
+
+  it('still rejects an unknown slot with 400 before rate limiting or provider access', async () => {
+    const handler = createMacroHandler(deps);
+    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'midnight_feast' }, AUTH));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_request');
+    expect(deps.consumeRateLimit).not.toHaveBeenCalled();
+    expect(deps.callProvider).not.toHaveBeenCalled();
+  });
+
   it('never logs the meal description, auth header, or provider body', async () => {
     deps = makeDeps({
       callProvider: vi.fn().mockResolvedValue(

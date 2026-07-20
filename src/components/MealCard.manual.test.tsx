@@ -27,6 +27,55 @@ function renderCard() {
   );
 }
 
+describe('MealCard Bedtime Snack slot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function renderBedtimeCard() {
+    render(
+      <MealCard
+        slot="bedtime_snack"
+        mealLog={null}
+        foods={[]}
+        onCalculate={onCalculate}
+        onSave={onSave}
+        onClear={onClear}
+      />,
+    );
+  }
+
+  it('renders an accessible Bedtime Snack section defaulting to 20:00 with the approved hint', () => {
+    renderBedtimeCard();
+
+    expect(screen.getByRole('region', { name: 'Bedtime Snack' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Bedtime Snack time')).toHaveValue('20:00');
+    expect(screen.getByText('Pre-sleep protein / casein (~20:00)')).toBeInTheDocument();
+  });
+
+  it('supports manual food entry and save without ever invoking the AI', async () => {
+    const user = userEvent.setup();
+    renderBedtimeCard();
+
+    await user.click(screen.getByRole('button', { name: /add food manually/i }));
+    await user.type(screen.getByLabelText(/food name/i), 'Casein shake');
+    await user.type(screen.getByLabelText(/^cal$/i), '120');
+    await user.type(screen.getByLabelText(/^p \(g\)$/i), '24');
+
+    onSave.mockResolvedValue(undefined);
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    expect(onCalculate).not.toHaveBeenCalled();
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const [slot, input] = onSave.mock.calls[0];
+    expect(slot).toBe('bedtime_snack');
+    expect(input.foods).toHaveLength(1);
+    expect(input.foods[0].food_name).toBe('Casein shake');
+    expect(input.foods[0].calories).toBe(120);
+    expect(input.foods[0].protein_g).toBe(24);
+  });
+});
+
 describe('MealCard manual entry when AI is unavailable', () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -26,30 +26,48 @@ export const MEAL_TIMING = {
   waketime: '06:00',
 } as const;
 
-export const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'post_gym', 'snack'];
+/** Canonical render order for the macro tracker's meal cards. */
+export const MEAL_SLOTS: MealSlot[] = [
+  'breakfast',
+  'pre_workout_snack',
+  'lunch',
+  'post_gym',
+  'snack',
+  'dinner',
+  'bedtime_snack',
+];
 
 export const MEAL_SLOT_LABELS: Record<MealSlot, string> = {
   breakfast: 'Breakfast',
+  pre_workout_snack: 'Pre-Workout Snack',
   lunch: 'Lunch',
-  dinner: 'Dinner',
   post_gym: 'Post-Gym Meal',
   snack: 'Snack',
+  dinner: 'Dinner',
+  bedtime_snack: 'Bedtime Snack',
 };
 
 export const MEAL_SLOT_ICONS: Record<MealSlot, string> = {
   breakfast: '🌅',
+  pre_workout_snack: '⚡',
   lunch: '☀️',
-  dinner: '🌙',
   post_gym: '💪',
   snack: '🍎',
+  dinner: '🌙',
+  bedtime_snack: '🥛',
 };
 
 export const MEAL_SLOT_TIMES: Record<MealSlot, { start: string; hint: string }> = {
-  breakfast: { start: '07:00', hint: 'Pre-workout / morning meal' },
+  breakfast: { start: '07:00', hint: 'Morning meal' },
+  pre_workout_snack: {
+    start: MEAL_TIMING.preGymSnack,
+    hint: `Fuel ~45 min before ${MEAL_TIMING.training} training`,
+  },
   lunch: { start: '12:00', hint: 'Mid-day meal' },
+  post_gym: { start: MEAL_TIMING.postGymMeal, hint: 'After training (~12:15)' },
+  snack: { start: MEAL_TIMING.snack3pm, hint: '3pm snack' },
   dinner: { start: '18:00', hint: 'Evening meal' },
-  post_gym: { start: '12:00', hint: 'After training (~12:00)' },
-  snack: { start: '15:00', hint: '3pm snack' },
+  bedtime_snack: { start: MEAL_TIMING.casein, hint: 'Pre-sleep protein / casein (~20:00)' },
 };
 
 export type SessionType = 'Upper A' | 'Lower A' | 'Back + Biceps' | 'Upper B' | 'Lower B';

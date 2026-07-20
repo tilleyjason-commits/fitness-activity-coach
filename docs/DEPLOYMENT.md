@@ -9,14 +9,24 @@ Ship in this order — each step depends on the previous one being live:
    - `010_macro_rate_limit.sql` — `macro_calc_attempts` table + `consume_macro_calc_quota()` RPC.
    - `011_transactional_saves.sql` — transactional replacement RPCs (`save_workout`, `save_routine`, `save_meal`, `delete_meal`, `replace_exercise_logs`).
    - `012_fix_workout_set_rls.sql` — separates workout-exercise and set inserts so the set RLS policy can observe the newly inserted parent row.
+   - `013_user_supplements.sql` — normalized per-user supplement definitions/logs plus the authenticated `set_supplement_taken` RPC.
+   - `014_expand_meal_slots.sql` — widens the `meal_logs.meal_slot` CHECK to the seven canonical slots (adds `pre_workout_snack`, `bedtime_snack`).
 
-   Apply with `supabase db push` (or paste into the SQL editor in order). All four
-   are additive and idempotent; they can be re-run safely.
+   Apply with `supabase db push` (or paste into the SQL editor in order).
+   Migration 014 is intentionally **not** idempotent: it fails closed if the
+   expected `meal_logs_meal_slot_check` constraint is absent (schema history
+   diverged). Apply each numbered migration once through Supabase's migration
+   history.
 
 2. **Edge Function**: `supabase functions deploy calculate-macros`.
    The function *fails closed* if `consume_macro_calc_quota()` is missing, so the
    migration must be applied first. Required function secrets: `NVIDIA_API_KEY`
    (`SUPABASE_URL`/`SUPABASE_ANON_KEY` are injected automatically).
+   The function must also be **redeployed before the 014 frontend**: its
+   request allowlist must recognize `pre_workout_snack`/`bedtime_snack` before
+   users can calculate those meals with AI. Separately, migration 014 must be
+   live before the frontend can save either new slot. Ship in the order
+   migration 014 → redeploy `calculate-macros` → frontend.
 
 3. **Web frontend**: merge to `main` → GitHub Actions runs quality gates
    (lint, typecheck, unit/component tests, build) and then deploys to GitHub Pages.

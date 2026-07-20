@@ -68,6 +68,53 @@ describe('saveMeal via save_meal RPC', () => {
   });
 });
 
+describe('expanded meal slots pass through the RPCs verbatim', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    rpcMock.mockResolvedValue({ data: 'meal-uuid', error: null });
+  });
+
+  it('saveMeal sends pre_workout_snack verbatim to save_meal', async () => {
+    const { saveMeal } = await import('~/lib/db');
+    await saveMeal('daily-log-1', 'pre_workout_snack', {
+      rawInput: 'banana',
+      mealTime: '10:15',
+      foods: [
+        {
+          food_name: 'Banana',
+          quantity: 1,
+          unit: 'medium',
+          calories: 105,
+          protein_g: 1,
+          carbs_g: 27,
+          fat_g: 0,
+          confidence: 'high',
+        },
+      ],
+    });
+
+    expect(rpcMock).toHaveBeenCalledTimes(1);
+    const [fn, payload] = rpcMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(fn).toBe('save_meal');
+    expect(payload.p_meal_slot).toBe('pre_workout_snack');
+    // Ownership stays server-side: no client-supplied user id, no table fallback.
+    expect(JSON.stringify(payload)).not.toMatch(/user_?id/i);
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+
+  it('deleteMeal sends bedtime_snack verbatim to delete_meal', async () => {
+    const { deleteMeal } = await import('~/lib/db');
+    rpcMock.mockResolvedValue({ data: null, error: null });
+    await deleteMeal('daily-log-1', 'bedtime_snack');
+
+    const [fn, payload] = rpcMock.mock.calls[0] as [string, Record<string, unknown>];
+    expect(fn).toBe('delete_meal');
+    expect(payload).toEqual({ p_daily_log_id: 'daily-log-1', p_meal_slot: 'bedtime_snack' });
+    expect(JSON.stringify(payload)).not.toMatch(/user_?id/i);
+    expect(fromMock).not.toHaveBeenCalled();
+  });
+});
+
 describe('deleteMeal via delete_meal RPC', () => {
   beforeEach(() => {
     vi.clearAllMocks();
