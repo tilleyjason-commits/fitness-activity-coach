@@ -22,6 +22,18 @@ export interface Profile {
   training_time: string | null;
 }
 
+/** The fields the onboarding wizard (/setup) collects; a subset of Profile. */
+export interface ProfileSetup {
+  age: number | null;
+  height_cm: number | null;
+  weight_lb: number | null;
+  bodyfat_pct: number | null;
+  goal_bodyfat_pct: number | null;
+  goal_weight_lb: number | null;
+  training_years: number | null;
+  training_time: string | null;
+}
+
 export interface DailyLog {
   id: string;
   user_id: string;

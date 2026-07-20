@@ -33,6 +33,19 @@ export async function getProfile(userId: string): Promise<Profile | null> {
   return (data as Profile | null) ?? null;
 }
 
+/**
+ * Returns true when the profile has at least been started (has a row).
+ * The wizard checks this to decide whether to redirect.
+ */
+export async function hasProfile(userId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true })
+    .eq('id', userId);
+  if (error) throw new Error(error.message);
+  return (count ?? 0) > 0;
+}
+
 export async function upsertProfile(profile: Profile): Promise<Profile> {
   const { data, error } = await supabase
     .from('profiles')
