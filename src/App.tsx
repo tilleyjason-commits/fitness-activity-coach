@@ -38,7 +38,16 @@ function AuthGuard() {
       return;
     }
     getProfile(user.id)
-      .then((p) => setProfileReady(p?.age !== null && p?.height_cm !== null))
+      .then((p) => {
+        // Profile exists if any meaningful field was ever set (age/height from wizard,
+        // or weight/bodyfat from old Settings page). If all null, it's a brand-new user
+        // who needs the setup wizard.
+        const hasData = p !== null && (
+          p.age !== null || p.height_cm !== null ||
+          p.weight_lb !== null || p.bodyfat_pct !== null
+        );
+        setProfileReady(hasData);
+      })
       .catch(() => setProfileReady(true)); // fail open — network error shouldn't block
   }, [user, loading]);
 
