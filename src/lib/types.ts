@@ -191,3 +191,167 @@ export interface Recommendation {
 }
 
 export type RecommendationInsert = Omit<Recommendation, 'id' | 'created_at'>;
+
+/* ------------------------------------------------------------------ */
+/* FitTrack workout tracking (Training tab)                            */
+/* ------------------------------------------------------------------ */
+
+export interface Exercise {
+  id: string;
+  name: string;
+  muscleGroup: string;
+}
+
+export interface SetRecord {
+  reps: number;
+  weight: number;
+  rir: number | null;
+  completed: boolean;
+}
+
+export interface WorkoutExercise {
+  exercise: Exercise;
+  sets: SetRecord[];
+  targetSets: number;
+  targetReps: number;
+  targetWeight: number;
+}
+
+export interface CardioEquipment {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+}
+
+export interface CardioWorkoutExercise {
+  equipment: CardioEquipment;
+  durationMinutes: number;
+  distanceMiles: number;
+}
+
+export interface WorkoutState {
+  exercises: WorkoutExercise[];
+  cardioExercises: CardioWorkoutExercise[];
+  date: string;
+}
+
+export interface WorkoutHistoryEntry extends WorkoutState {
+  id: string;
+  loggedAt: string;
+  totalSets: number;
+  completedSets: number;
+  totalCardioMinutes: number;
+  totalCardioMiles: number;
+}
+
+export type Weekday =
+  | 'Monday'
+  | 'Tuesday'
+  | 'Wednesday'
+  | 'Thursday'
+  | 'Friday'
+  | 'Saturday'
+  | 'Sunday';
+
+export interface RoutineExercise {
+  exercise: Exercise;
+  targetSets: number;
+  targetReps: number;
+  targetWeight: number;
+}
+
+export interface RoutineCardioExercise {
+  equipment: CardioEquipment;
+  durationMinutes: number;
+  distanceMiles: number;
+}
+
+export interface DailyRoutine {
+  day: Weekday;
+  name: string;
+  exercises: RoutineExercise[];
+  cardioExercises: RoutineCardioExercise[];
+}
+
+export type WeeklyRoutines = Record<Weekday, DailyRoutine>;
+
+/* Row shapes for the merged FitTrack tables (migration 004). */
+
+export interface WorkoutRow {
+  id: string;
+  user_id: string;
+  workout_date: string;
+  status: 'active' | 'completed';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkoutExerciseRow {
+  id: string;
+  workout_id: string;
+  exercise_id: string;
+  exercise_name: string;
+  muscle_group: string;
+  target_sets: number;
+  target_reps: number;
+  target_weight: number;
+  sort_order: number;
+}
+
+export interface WorkoutSetRow {
+  id: string;
+  workout_exercise_id: string;
+  set_number: number;
+  reps: number;
+  weight: number;
+  rir: number | null;
+  completed: boolean;
+  completed_at: string | null;
+}
+
+export interface WorkoutCardioRow {
+  id: string;
+  workout_id: string;
+  equipment_id: string;
+  equipment_name: string;
+  equipment_category: string;
+  duration_minutes: number;
+  distance_miles: number;
+  sort_order: number;
+}
+
+export interface RoutineRow {
+  id: string;
+  user_id: string;
+  day_of_week: string;
+  name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoutineUpsertRow {
+  user_id: string;
+  day_of_week: string;
+  name: string;
+  updated_at: string;
+}
+
+export interface RoutineItemRow {
+  id: string;
+  routine_id: string;
+  item_type: 'strength' | 'cardio';
+  exercise_id: string | null;
+  exercise_name: string | null;
+  muscle_group: string | null;
+  target_sets: number | null;
+  target_reps: number | null;
+  target_weight: number | null;
+  cardio_equipment_id: string | null;
+  cardio_equipment_name: string | null;
+  duration_minutes: number | null;
+  distance_miles: number | null;
+  sort_order: number;
+}
+
+export type RoutineItemInsertRow = Omit<RoutineItemRow, 'id' | 'routine_id'>;

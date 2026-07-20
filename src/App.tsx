@@ -4,6 +4,8 @@ import { useAuth } from '~/context/AuthContext';
 import { NavBar } from '~/components/NavBar';
 import Login from '~/pages/Login';
 import Dashboard from '~/pages/Dashboard';
+import TrainingPage from '~/pages/TrainingPage';
+import RoutinesPage from '~/pages/RoutinesPage';
 import LogTraining from '~/pages/LogTraining';
 import LogNutrition from '~/pages/LogNutrition';
 import LogSupplements from '~/pages/LogSupplements';
@@ -45,6 +47,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<AuthGuard />}>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/training" element={<TrainingPage />} />
+          <Route path="/routines" element={<RoutinesPage />} />
           <Route path="/log/training" element={<LogTraining />} />
           <Route path="/log/nutrition" element={<LogNutrition />} />
           <Route path="/log/supplements" element={<LogSupplements />} />
