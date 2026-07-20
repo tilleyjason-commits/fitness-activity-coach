@@ -64,7 +64,10 @@ function routinesWithTodayPreset(): WeeklyRoutines {
 
 function renderTraining(path = '/training') {
   return render(
-    <MemoryRouter initialEntries={[path]}>
+    <MemoryRouter
+      initialEntries={[path]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <TrainingPage />
     </MemoryRouter>,
   );
@@ -101,7 +104,10 @@ describe('Training page tab navigation', () => {
 describe('Routines page History tab link', () => {
   it('links to /training with the History tab preselected', async () => {
     render(
-      <MemoryRouter initialEntries={['/routines']}>
+      <MemoryRouter
+        initialEntries={['/routines']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <RoutinesPage />
       </MemoryRouter>,
     );
