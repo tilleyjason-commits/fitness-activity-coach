@@ -93,7 +93,6 @@ export default function TrainingPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
-  const [todayRoutine, setTodayRoutine] = useState<DailyRoutine | null>(null);
   const [restDefaultSeconds, setRestDefaultSeconds] = useState(90);
   const [showRestTimer, setShowRestTimer] = useState(false);
   const [restTimerKey, setRestTimerKey] = useState(0);
@@ -115,9 +114,17 @@ export default function TrainingPage() {
         getRestTimerDefaultSeconds(user.id),
       ]);
       dirtyRef.current = false;
-      setWorkout(active);
-      setTodayRoutine(routines[getTodayWeekday()]);
       setRestDefaultSeconds(restDefault);
+
+      const routine = routines[getTodayWeekday()];
+
+      if (!active && routine && routineHasItems(routine)) {
+        // Auto-populate the workout from today's routine preset
+        setWorkout(replaceWorkoutWithRoutine(routine, today));
+        dirtyRef.current = true;
+      } else {
+        setWorkout(active);
+      }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load workout');
     } finally {
@@ -303,21 +310,12 @@ export default function TrainingPage() {
         <div className="space-y-4">
           <div className="card py-8 text-center">
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              No workout started today.
+              No routine for today. Set one up in Routines to auto-load your workout, or start a blank one.
             </p>
             <button type="button" onClick={() => startWorkout()} className="btn-primary">
               <Play className="h-4 w-4" aria-hidden />
-              Start Workout
+              Start Blank Workout
             </button>
-            {todayRoutine && routineHasItems(todayRoutine) && (
-              <button
-                type="button"
-                onClick={() => startWorkout(todayRoutine)}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-500/50 py-3 text-base font-semibold text-emerald-600 transition-colors hover:bg-emerald-500/10 dark:text-emerald-400"
-              >
-                Start from {todayRoutine.name || `${todayRoutine.day} routine`}
-              </button>
-            )}
           </div>
 
           {history.length > 0 && (
