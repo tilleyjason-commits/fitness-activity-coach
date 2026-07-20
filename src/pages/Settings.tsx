@@ -97,6 +97,7 @@ export default function Settings() {
     try {
       const updated = await upsertProfile({
         id: user.id,
+        user_id: user.id,
         age: profile?.age ?? null,
         height_cm: profile?.height_cm ?? null,
         weight_lb: toNum(weight),

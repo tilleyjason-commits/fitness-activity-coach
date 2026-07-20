@@ -2,15 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { useDailyLog } from '~/hooks/useDailyLog';
-import {
-  calculateMacros,
-  deleteMealLog,
-  getMealFoods,
-  getMealLogs,
-  replaceMealFoods,
-  syncDailyTotals,
-  upsertMealLog,
-} from '~/lib/db';
+import { calculateMacros, deleteMeal, getMealFoods, getMealLogs, saveMeal } from '~/lib/db';
 import { MEAL_SLOTS } from '~/lib/constants';
 import type { MealFood, MealLog, MealSlot } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
@@ -62,34 +54,14 @@ export default function MacroTrackerPage() {
 
   async function handleSave(slot: MealSlot, input: MealSaveInput): Promise<void> {
     const id = await ensureDailyLog();
-    const totals = input.foods.reduce(
-      (acc, f) => ({
-        calories: acc.calories + f.calories,
-        protein: acc.protein + f.protein_g,
-        carbs: acc.carbs + f.carbs_g,
-        fat: acc.fat + f.fat_g,
-      }),
-      { calories: 0, protein: 0, carbs: 0, fat: 0 },
-    );
-    const saved = await upsertMealLog({
-      daily_log_id: id,
-      meal_slot: slot,
-      meal_time: input.mealTime,
-      raw_input: input.rawInput || null,
-      total_calories: Math.round(totals.calories),
-      total_protein_g: Math.round(totals.protein * 10) / 10,
-      total_carbs_g: Math.round(totals.carbs * 10) / 10,
-      total_fat_g: Math.round(totals.fat * 10) / 10,
-    });
-    await replaceMealFoods(saved.id, input.foods);
-    await syncDailyTotals(id);
+    // One transactional round trip: meal log + foods + daily totals (RPC).
+    await saveMeal(id, slot, input);
     await Promise.all([loadMeals(id), reload()]);
   }
 
   async function handleClear(slot: MealSlot): Promise<void> {
     if (!log) return;
-    await deleteMealLog(log.id, slot);
-    await syncDailyTotals(log.id);
+    await deleteMeal(log.id, slot);
     await Promise.all([loadMeals(log.id), reload()]);
   }
 

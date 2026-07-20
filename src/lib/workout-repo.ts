@@ -1,8 +1,8 @@
 import { supabase } from './supabase';
 import {
   mapActiveWorkoutToState,
+  mapRoutineItems,
   mapRoutineRowsToWeeklyRoutines,
-  mapRoutineToRows,
   mapWorkoutToHistoryEntry,
 } from './workout-mappers';
 import type {
@@ -113,96 +113,52 @@ export async function getWorkoutHistory(userId: string): Promise<WorkoutHistoryE
 }
 
 /**
- * Persist the full active-workout state (replace strategy: children are
- * deleted and re-inserted). The workouts table has no unique constraint on
- * (user_id, workout_date), so this selects-then-inserts instead of upserting.
+ * Persist the full active-workout state through the transactional save_workout
+ * RPC (migration 011): one atomic replace, ownership derived from auth.uid()
+ * on the server, idempotent on retry. There is deliberately NO client-side
+ * delete-then-insert fallback — if the RPC is unavailable the save fails
+ * visibly and can be retried.
  */
-export async function saveWorkoutState(userId: string, workout: WorkoutState): Promise<void> {
-  const existing = await getActiveWorkoutRow(userId, workout.date);
-  let workoutId: string;
-
-  if (existing) {
-    workoutId = existing.id;
-    const { error } = await supabase
-      .from('workouts')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', workoutId);
-    if (error) throw new Error(error.message);
-  } else {
-    const { data, error } = await supabase
-      .from('workouts')
-      .insert({ user_id: userId, workout_date: workout.date, status: 'active' })
-      .select('id')
-      .single();
-    if (error) throw new Error(error.message);
-    workoutId = (data as { id: string }).id;
-  }
-
-  // Replace children; workout_sets cascade when their exercise rows go.
-  const { error: deleteExerciseError } = await supabase
-    .from('workout_exercises')
-    .delete()
-    .eq('workout_id', workoutId);
-  if (deleteExerciseError) throw new Error(deleteExerciseError.message);
-
-  const { error: deleteCardioError } = await supabase
-    .from('workout_cardio')
-    .delete()
-    .eq('workout_id', workoutId);
-  if (deleteCardioError) throw new Error(deleteCardioError.message);
-
-  if (workout.exercises.length > 0) {
-    const { data: savedExercises, error: insertExerciseError } = await supabase
-      .from('workout_exercises')
-      .insert(
-        workout.exercises.map((we, idx) => ({
-          workout_id: workoutId,
-          exercise_id: we.exercise.id,
-          exercise_name: we.exercise.name,
-          muscle_group: we.exercise.muscleGroup,
-          target_sets: we.targetSets,
-          target_reps: we.targetReps,
-          target_weight: we.targetWeight,
-          sort_order: idx,
-        })),
-      )
-      .select('id');
-    if (insertExerciseError) throw new Error(insertExerciseError.message);
-
-    const exerciseIds = (savedExercises ?? []) as { id: string }[];
-    const setRows = workout.exercises.flatMap((we, exIdx) => {
-      const savedId = exerciseIds[exIdx]?.id;
-      if (!savedId) return [];
-      return we.sets.map((set, setIdx) => ({
-        workout_exercise_id: savedId,
+export async function saveWorkoutState(workout: WorkoutState): Promise<void> {
+  const { error } = await supabase.rpc('save_workout', {
+    p_workout_date: workout.date,
+    p_exercises: workout.exercises.map((we) => ({
+      exercise_id: we.exercise.id,
+      exercise_name: we.exercise.name,
+      muscle_group: we.exercise.muscleGroup,
+      target_sets: we.targetSets,
+      target_reps: we.targetReps,
+      target_weight: we.targetWeight,
+      sets: we.sets.map((set, setIdx) => ({
         set_number: setIdx + 1,
         reps: set.reps,
         weight: set.weight,
         rir: set.rir,
         completed: set.completed,
-      }));
-    });
-
-    if (setRows.length > 0) {
-      const { error: insertSetError } = await supabase.from('workout_sets').insert(setRows);
-      if (insertSetError) throw new Error(insertSetError.message);
-    }
-  }
-
-  if (workout.cardioExercises.length > 0) {
-    const { error: insertCardioError } = await supabase.from('workout_cardio').insert(
-      workout.cardioExercises.map((ce, idx) => ({
-        workout_id: workoutId,
-        equipment_id: ce.equipment.id,
-        equipment_name: ce.equipment.name,
-        equipment_category: ce.equipment.category,
-        duration_minutes: ce.durationMinutes,
-        distance_miles: ce.distanceMiles,
-        sort_order: idx,
       })),
-    );
-    if (insertCardioError) throw new Error(insertCardioError.message);
-  }
+    })),
+    p_cardio: workout.cardioExercises.map((ce) => ({
+      equipment_id: ce.equipment.id,
+      equipment_name: ce.equipment.name,
+      equipment_category: ce.equipment.category,
+      duration_minutes: ce.durationMinutes,
+      distance_miles: ce.distanceMiles,
+    })),
+  });
+  if (error) throw new Error(`Workout save failed (save_workout): ${error.message}`);
+}
+
+/** True when the date already has a completed workout (used to avoid silently
+ *  auto-populating a second workout the same day). */
+export async function hasCompletedWorkout(userId: string, date: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('workouts')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('workout_date', date)
+    .eq('status', 'completed');
+  if (error) throw new Error(error.message);
+  return (count ?? 0) > 0;
 }
 
 /** Mark the date's active workout completed; the DB trigger (migration 006) summarizes it. */
@@ -245,29 +201,19 @@ export async function getWeeklyRoutines(userId: string): Promise<WeeklyRoutines>
   return mapRoutineRowsToWeeklyRoutines(routines, itemData ?? []);
 }
 
-/** Upsert one day's routine and replace its items. */
-export async function saveRoutine(userId: string, routine: DailyRoutine): Promise<void> {
-  const mapped = mapRoutineToRows(userId, routine);
-
-  const { data, error: routineError } = await supabase
-    .from('routines')
-    .upsert(mapped.routine, { onConflict: 'user_id,day_of_week' })
-    .select('id')
-    .single();
-  if (routineError) throw new Error(routineError.message);
-  const routineId = (data as { id: string }).id;
-
-  const { error: deleteError } = await supabase
-    .from('routine_items')
-    .delete()
-    .eq('routine_id', routineId);
-  if (deleteError) throw new Error(deleteError.message);
-  if (mapped.items.length === 0) return;
-
-  const { error: insertError } = await supabase
-    .from('routine_items')
-    .insert(mapped.items.map((item) => ({ ...item, routine_id: routineId })));
-  if (insertError) throw new Error(insertError.message);
+/**
+ * Upsert one day's routine and replace its items through the transactional
+ * save_routine RPC (migration 011). Ownership derives from auth.uid() server-
+ * side; no destructive client-side fallback exists.
+ */
+export async function saveRoutine(routine: DailyRoutine): Promise<void> {
+  const items = mapRoutineItems(routine);
+  const { error } = await supabase.rpc('save_routine', {
+    p_day_of_week: routine.day,
+    p_name: routine.name,
+    p_items: items,
+  });
+  if (error) throw new Error(`Routine save failed (save_routine): ${error.message}`);
 }
 
 /* ------------------------------------------------------------------ */

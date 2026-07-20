@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { createAutosaveController, type AutosaveController, type AutosaveState } from '~/lib/autosave';
+import { SaveStatus } from '~/components/SaveStatus';
+import type { WorkoutState as WorkoutStateType } from '~/lib/types';
+import { Link, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { CheckCircle2, Loader2, Play, RefreshCw } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
@@ -14,6 +17,7 @@ import {
   getRestTimerDefaultSeconds,
   getWeeklyRoutines,
   getWorkoutHistory,
+  hasCompletedWorkout,
   saveRestTimerDefaultSeconds,
   saveWorkoutState,
 } from '~/lib/workout-repo';
@@ -83,8 +87,15 @@ export default function TrainingPage() {
   const { user } = useAuth();
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const [mode, setMode] = useState<TrainingMode>('workout');
+  // Deep-linkable tab: /training?tab=history opens with History selected
+  // (the Routines page "History" tab relies on this).
+  const [searchParams] = useSearchParams();
+  const [mode, setMode] = useState<TrainingMode>(() =>
+    searchParams.get('tab') === 'history' ? 'history' : 'workout',
+  );
   const [workout, setWorkout] = useState<WorkoutState | null>(null);
+  const [completedToday, setCompletedToday] = useState(false);
+  const [todayRoutine, setTodayRoutine] = useState<DailyRoutine | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -100,27 +111,56 @@ export default function TrainingPage() {
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [finishing, setFinishing] = useState(false);
 
-  // True when local workout state has edits not yet flushed to Supabase.
+  // True when local workout state has edits not yet handed to the autosaver.
   const dirtyRef = useRef(false);
+
+  // Single-flight coalescing autosave: one save in flight, newest snapshot
+  // wins, stale completions ignored (see src/lib/autosave.ts).
+  const autosaveRef = useRef<AutosaveController<WorkoutStateType> | null>(null);
+  const [autosaveState, setAutosaveState] = useState<AutosaveState>({
+    status: 'idle',
+    error: null,
+  });
+
+  useEffect(() => {
+    if (!user) return;
+    const controller = createAutosaveController<WorkoutStateType>(
+      (snapshot) => saveWorkoutState(snapshot),
+      { debounceMs: 1200 },
+    );
+    autosaveRef.current = controller;
+    setAutosaveState(controller.getState());
+    const unsubscribe = controller.subscribe(setAutosaveState);
+    return () => {
+      unsubscribe();
+      controller.dispose();
+      autosaveRef.current = null;
+    };
+  }, [user]);
 
   const loadWorkout = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setLoadError(null);
     try {
-      const [active, routines, restDefault] = await Promise.all([
+      const [active, routines, restDefault, alreadyCompleted] = await Promise.all([
         getActiveWorkout(user.id, today),
         getWeeklyRoutines(user.id),
         getRestTimerDefaultSeconds(user.id),
+        hasCompletedWorkout(user.id, today),
       ]);
       dirtyRef.current = false;
       setRestDefaultSeconds(restDefault);
+      setCompletedToday(alreadyCompleted);
 
       const routine = routines[getTodayWeekday()];
+      const routinePreset = routine && routineHasItems(routine) ? routine : null;
+      setTodayRoutine(routinePreset);
 
-      if (!active && routine && routineHasItems(routine)) {
-        // Auto-populate the workout from today's routine preset
-        setWorkout(replaceWorkoutWithRoutine(routine, today));
+      if (!active && !alreadyCompleted && routinePreset) {
+        // Auto-populate the workout from today's routine preset — but never
+        // after a completed workout: repeating a day is an explicit action.
+        setWorkout(replaceWorkoutWithRoutine(routinePreset, today));
         dirtyRef.current = true;
       } else {
         setWorkout(active);
@@ -150,17 +190,12 @@ export default function TrainingPage() {
     void loadHistory();
   }, [loadWorkout, loadHistory]);
 
-  // Debounced autosave: every mutation marks the state dirty and this flushes it.
+  // Every mutation marks the state dirty; the controller debounces, coalesces
+  // and serializes the actual saves.
   useEffect(() => {
     if (!user || !workout || !dirtyRef.current) return;
-    const id = window.setTimeout(() => {
-      dirtyRef.current = false;
-      saveWorkoutState(user.id, workout).catch((e: unknown) => {
-        dirtyRef.current = true;
-        setSaveError(e instanceof Error ? e.message : 'Failed to save workout');
-      });
-    }, 1200);
-    return () => window.clearTimeout(id);
+    dirtyRef.current = false;
+    autosaveRef.current?.schedule(workout);
   }, [user, workout]);
 
   const mutateWorkout = useCallback((updater: (current: WorkoutState) => WorkoutState) => {
@@ -253,10 +288,14 @@ export default function TrainingPage() {
     setFinishing(true);
     setSaveError(null);
     try {
+      // Queue the latest snapshot and drain the autosaver; flush() rejects on
+      // failure so we can never mark an unsaved workout as completed.
       dirtyRef.current = false;
-      await saveWorkoutState(user.id, workout);
+      autosaveRef.current?.schedule(workout);
+      await (autosaveRef.current?.flush() ?? saveWorkoutState(workout));
       await completeWorkout(user.id, today);
       setWorkout(null);
+      setCompletedToday(true);
       setConfirmFinish(false);
       setShowRestTimer(false);
       setMode('history');
@@ -309,13 +348,46 @@ export default function TrainingPage() {
       ) : workout === null ? (
         <div className="space-y-4">
           <div className="card py-8 text-center">
-            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
-              No routine for today. Set one up in Routines to auto-load your workout, or start a blank one.
-            </p>
-            <button type="button" onClick={() => startWorkout()} className="btn-primary">
-              <Play className="h-4 w-4" aria-hidden />
-              Start Blank Workout
-            </button>
+            {completedToday ? (
+              <>
+                <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+                  <CheckCircle2
+                    className="mb-1 mr-1.5 inline h-4 w-4 text-emerald-500"
+                    aria-hidden
+                  />
+                  Today&apos;s workout is completed — nice work! Repeating it is up to you.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {todayRoutine && (
+                    <button
+                      type="button"
+                      onClick={() => startWorkout(todayRoutine)}
+                      className="btn-primary"
+                    >
+                      <RefreshCw className="h-4 w-4" aria-hidden />
+                      Repeat today&apos;s routine
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => startWorkout()}
+                    className="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                  >
+                    Start Blank Workout
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+                  No routine for today. Set one up in Routines to auto-load your workout, or start a blank one.
+                </p>
+                <button type="button" onClick={() => startWorkout()} className="btn-primary">
+                  <Play className="h-4 w-4" aria-hidden />
+                  Start Blank Workout
+                </button>
+              </>
+            )}
           </div>
 
           {history.length > 0 && (
@@ -355,7 +427,13 @@ export default function TrainingPage() {
             </div>
           )}
 
-          {saveError && <p className="text-sm text-red-500">{saveError}</p>}
+          <SaveStatus state={autosaveState} onRetry={() => autosaveRef.current?.retry()} />
+
+          {saveError && (
+            <p role="alert" className="text-sm text-red-500">
+              {saveError}
+            </p>
+          )}
 
           <ExerciseSelector
             onAdd={addExercise}

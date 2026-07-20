@@ -11,7 +11,9 @@ export const SEVERITY_ORDER: Record<Severity, number> = {
 };
 
 export interface Profile {
+  /** Ownership contract: id and user_id are both auth.uid() and must match. */
   id: string;
+  user_id: string;
   age: number | null;
   height_cm: number | null;
   weight_lb: number | null;

@@ -21,5 +21,10 @@
       "~/*": ["src/*"]
     }
   },
-  "include": ["src", "rules"]
+  "include": [
+    "src",
+    "rules",
+    "supabase/functions/calculate-macros/handler.ts",
+    "supabase/functions/calculate-macros/handler.test.ts"
+  ]
 }

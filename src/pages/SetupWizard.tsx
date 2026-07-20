@@ -168,6 +168,7 @@ export default function SetupWizard() {
     try {
       await upsertProfile({
         id: user.id,
+        user_id: user.id,
         age: toNum(data.age),
         height_cm: toNum(data.height_cm),
         weight_lb: toNum(data.weight_lb),
@@ -177,13 +178,14 @@ export default function SetupWizard() {
         training_years: toNum(data.training_years),
         training_time: data.training_time || null,
       });
+      // Navigate only after the profile actually saved; a failure keeps the
+      // user (and their entered values) on the wizard with a retryable error.
+      navigate('/');
     } catch (e) {
-      // Fail open: surface the message but never trap the user in the wizard.
       setSaveError(e instanceof Error ? e.message : 'Failed to save profile');
     } finally {
       setSaving(false);
     }
-    navigate('/');
   }
 
   function fieldClass(field: keyof SetupData): string {
@@ -383,7 +385,12 @@ export default function SetupWizard() {
               </dl>
             </div>
 
-            {saveError && <p className="text-sm text-red-500">{saveError}</p>}
+            {saveError && (
+              <p role="alert" className="text-sm text-red-500">
+                Couldn&apos;t save your profile: {saveError}. Your answers are still here — tap
+                &ldquo;Let&apos;s go!&rdquo; to try again.
+              </p>
+            )}
 
             <button
               type="button"

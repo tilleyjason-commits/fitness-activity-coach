@@ -99,7 +99,7 @@ export default function RoutinesPage() {
     setSaveError(null);
     try {
       const routine = editorRoutine();
-      await saveRoutine(user.id, routine);
+      await saveRoutine(routine);
       setRoutines((prev) => (prev ? { ...prev, [routine.day]: routine } : prev));
       setSavedFlash(true);
       if (savedFlashTimeoutRef.current !== null) {
@@ -122,7 +122,7 @@ export default function RoutinesPage() {
     setSaveError(null);
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
-      await saveWorkoutState(user.id, replaceWorkoutWithRoutine(editorRoutine(), today));
+      await saveWorkoutState(replaceWorkoutWithRoutine(editorRoutine(), today));
       navigate('/training');
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Failed to start workout');
@@ -154,7 +154,7 @@ export default function RoutinesPage() {
         <Link to="/training" className={`${tabBase} ${tabInactive}`}>
           Workout
         </Link>
-        <Link to="/training" className={`${tabBase} ${tabInactive}`}>
+        <Link to="/training?tab=history" className={`${tabBase} ${tabInactive}`}>
           History
         </Link>
         <span className={`${tabBase} bg-emerald-500 text-white`} aria-current="page">
