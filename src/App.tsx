@@ -30,16 +30,19 @@ function LoadingScreen() {
 /** Redirects unauthenticated visitors to /login; redirects new users to /setup. */
 function AuthGuard() {
   const { user, loading } = useAuth();
-  const [profileReady, setProfileReady] = useState<boolean | null>(null);
+  const [profileReady, setProfileReady] = useState<boolean>(() => !user);
 
   useEffect(() => {
-    if (!user || loading) return;
+    if (!user || loading) {
+      if (!user && !loading) setProfileReady(true);
+      return;
+    }
     getProfile(user.id)
       .then((p) => setProfileReady(p?.age !== null && p?.height_cm !== null))
-      .catch(() => setProfileReady(true)); // fail open
+      .catch(() => setProfileReady(true)); // fail open — network error shouldn't block
   }, [user, loading]);
 
-  if (loading || profileReady === null) return <LoadingScreen />;
+  if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
   if (!profileReady) return <Navigate to="/setup" replace />;
 

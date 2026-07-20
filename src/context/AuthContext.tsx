@@ -28,24 +28,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
+
+    // Safety net: if auth doesn't resolve in 3s (iOS Safari issue), release the spinner
+    const fallback = setTimeout(() => {
+      if (active) {
+        setLoading(false);
+      }
+    }, 3000);
+
     supabase.auth
       .getSession()
       .then(({ data }) => {
         if (!active) return;
         setSession(data.session);
         setLoading(false);
+        clearTimeout(fallback);
       })
       .catch(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setLoading(false);
+          clearTimeout(fallback);
+        }
       });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next);
       setLoading(false);
+      clearTimeout(fallback);
     });
 
     return () => {
       active = false;
+      clearTimeout(fallback);
       subscription.subscription.unsubscribe();
     };
   }, []);
