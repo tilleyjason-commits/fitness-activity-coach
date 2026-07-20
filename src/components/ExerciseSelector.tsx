@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import { Check, Minus, Plus } from 'lucide-react';
-import { SELECTOR_GROUPS, getSelectorItems, isCardioGroup } from '~/lib/fittrack-exercises';
-import type { CardioEquipment, Exercise } from '~/lib/types';
+import {
+  EXERCISE_EQUIPMENT,
+  SELECTOR_GROUPS,
+  getSelectorItems,
+  isCardioGroup,
+} from '~/lib/fittrack-exercises';
+import type { CardioEquipment, Exercise, ExerciseEquipment } from '~/lib/types';
 
 interface ExerciseSelectorProps {
   onAdd: (exercise: Exercise, sets: number, reps: number, weight: number) => void;
@@ -17,6 +22,10 @@ interface StepperProps {
   display: string;
   onDecrement: () => void;
   onIncrement: () => void;
+}
+
+function isStrengthExercise(item: Exercise | CardioEquipment): item is Exercise {
+  return 'muscleGroup' in item;
 }
 
 function Stepper({ label, display, onDecrement, onIncrement }: StepperProps) {
@@ -55,6 +64,8 @@ export function ExerciseSelector({
   addedIds = [],
 }: ExerciseSelectorProps) {
   const [group, setGroup] = useState<string>(SELECTOR_GROUPS[0]);
+  const [query, setQuery] = useState('');
+  const [equipment, setEquipment] = useState<ExerciseEquipment | ''>('');
   const [selected, setSelected] = useState<Exercise | CardioEquipment | null>(null);
   const [sets, setSets] = useState(3);
   const [reps, setReps] = useState(10);
@@ -63,15 +74,15 @@ export function ExerciseSelector({
   const [distanceMiles, setDistanceMiles] = useState(0);
 
   const cardioMode = isCardioGroup(group);
-  const items = getSelectorItems(group);
+  const items = getSelectorItems(group, { query, equipment });
   const selectedAlreadyAdded = selected !== null && addedIds.includes(selected.id);
 
   function handleAdd() {
     if (!selected) return;
-    if (cardioMode) {
-      onAddCardio(selected as CardioEquipment, durationMinutes, distanceMiles);
+    if (isStrengthExercise(selected)) {
+      onAdd(selected, sets, reps, weight);
     } else {
-      onAdd(selected as Exercise, sets, reps, weight);
+      onAddCardio(selected, durationMinutes, distanceMiles);
     }
     setSelected(null);
   }
@@ -79,6 +90,46 @@ export function ExerciseSelector({
   return (
     <section className="card" aria-label={title}>
       <h2 className="section-title">{title}</h2>
+
+      <div className={`mb-3 grid gap-2 ${cardioMode ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
+        <label className="sr-only" htmlFor="exercise-search">
+          Search exercises
+        </label>
+        <input
+          id="exercise-search"
+          type="search"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setSelected(null);
+          }}
+          placeholder={cardioMode ? 'Search cardio equipment' : 'Search exercises'}
+          className="field px-3 py-2 text-sm"
+        />
+        {!cardioMode && (
+          <div>
+            <label className="sr-only" htmlFor="exercise-equipment">
+              Equipment
+            </label>
+            <select
+              id="exercise-equipment"
+              value={equipment}
+              onChange={(event) => {
+                setEquipment(event.target.value as ExerciseEquipment | '');
+                setSelected(null);
+              }}
+              className="field min-w-32 px-2 py-2 text-sm"
+            >
+              <option value="">All equipment</option>
+              {EXERCISE_EQUIPMENT.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
 
       <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Muscle groups">
         {SELECTOR_GROUPS.map((g) => (
@@ -104,7 +155,7 @@ export function ExerciseSelector({
 
       {items.length === 0 ? (
         <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
-          No exercises found for {group}.
+          No exercises match the selected filters.
         </p>
       ) : (
         <div className="mb-3 max-h-56 space-y-1.5 overflow-y-auto pr-1">
@@ -122,7 +173,14 @@ export function ExerciseSelector({
                     : 'border-slate-200 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:text-slate-200 dark:hover:border-slate-600'
                 }`}
               >
-                <span>{item.name}</span>
+                <span className="min-w-0">
+                  <span className="block">{item.name}</span>
+                  {isStrengthExercise(item) && (
+                    <span className="block text-[11px] font-normal text-slate-400 dark:text-slate-500">
+                      {item.equipment} · {item.muscleGroup}
+                    </span>
+                  )}
+                </span>
                 {alreadyAdded && (
                   <Check className="h-4 w-4 shrink-0 text-emerald-500" aria-label="Already added" />
                 )}

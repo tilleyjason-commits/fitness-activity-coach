@@ -210,10 +210,29 @@ export type RecommendationInsert = Omit<Recommendation, 'id' | 'created_at'>;
 /* FitTrack workout tracking (Training tab)                            */
 /* ------------------------------------------------------------------ */
 
+export type ExerciseEquipment =
+  | 'Machine'
+  | 'Cable'
+  | 'Dumbbell'
+  | 'Barbell'
+  | 'EZ Bar'
+  | 'Smith Machine'
+  | 'Bodyweight'
+  | 'Assisted'
+  | 'Kettlebell'
+  | 'Landmine'
+  | 'Resistance Band'
+  | 'Trap Bar'
+  | 'Sled'
+  | 'Medicine Ball'
+  | 'Other';
+
 export interface Exercise {
   id: string;
   name: string;
   muscleGroup: string;
+  /** Optional for backward compatibility with workouts saved before catalog v2. */
+  equipment?: ExerciseEquipment;
 }
 
 export interface SetRecord {
