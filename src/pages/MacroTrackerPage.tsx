@@ -9,7 +9,7 @@ import { PageHeader } from '~/components/PageHeader';
 import { MealCard, type MealSaveInput } from '~/components/MealCard';
 import { DayMacroSummary } from '~/components/DayMacroSummary';
 
-/** AI-powered per-meal macro tracker: five slots summing into daily_logs. */
+/** AI-powered per-meal macro tracker: the canonical MEAL_SLOTS summing into daily_logs. */
 export default function MacroTrackerPage() {
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const { log, loading, save, reload } = useDailyLog(date);

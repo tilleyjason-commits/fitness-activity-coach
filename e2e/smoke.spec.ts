@@ -379,6 +379,159 @@ test.describe('authenticated user-supplements smoke', () => {
   });
 });
 
+test.describe('authenticated meal-slot smoke', () => {
+  // Requires migration 014 (expanded meal_logs.meal_slot CHECK) on the target
+  // project, plus both disposable accounts for the RLS isolation checks.
+  test.skip(
+    !hasSmokeCredentials || !hasCatalogSmokeCredentials,
+    'Meal-slot smoke skipped: both disposable-account credential sets are required.',
+  );
+
+  test('manual pre-workout and bedtime snacks persist, total, isolate, and clean up', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const apiA = createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const apiB = createClient(supabaseUrl!, supabaseAnonKey!, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    // Deterministic far-future date: never a real logging day, always the same
+    // row, pre-cleaned below so reruns start from nothing.
+    const smokeDate = '2081-06-15';
+
+    async function fillMealCard(
+      card: import('@playwright/test').Locator,
+      food: { name: string; cal: string; p: string; c: string; f: string },
+    ): Promise<void> {
+      await card.getByRole('button', { name: /add food manually/i }).click();
+      await card.getByLabel('Food name').fill(food.name);
+      await card.getByLabel('Cal', { exact: true }).fill(food.cal);
+      await card.getByLabel('P (g)', { exact: true }).fill(food.p);
+      await card.getByLabel('C (g)', { exact: true }).fill(food.c);
+      await card.getByLabel('F (g)', { exact: true }).fill(food.f);
+      await card.getByRole('button', { name: 'Save', exact: true }).click();
+      // Draft totals are visible before persistence. Require the saved-state
+      // controls so this cannot pass when save_meal rejects the slot.
+      await expect(card.getByRole('button', { name: 'Edit', exact: true })).toBeVisible({
+        timeout: 15_000,
+      });
+    }
+
+    let userAId: string | null = null;
+
+    try {
+      const { data: authA, error: authAError } = await apiA.auth.signInWithPassword({
+        email: smokeEmail!,
+        password: smokePassword!,
+      });
+      expect(authAError).toBeNull();
+      userAId = authA.user!.id;
+
+      // Deterministic start: no far-future daily log (cascade removes meals).
+      const { error: precleanError } = await apiA
+        .from('daily_logs')
+        .delete()
+        .eq('user_id', userAId)
+        .eq('log_date', smokeDate);
+      expect(precleanError).toBeNull();
+
+      // --- UI as user A: manual entry into both new slots (no AI provider).
+      await signInThroughUi(page);
+      await page.goto('./#/macros');
+      await expect(page.getByRole('heading', { name: "Today's Meals" })).toBeVisible();
+      await page.getByLabel('Date').fill(smokeDate);
+
+      const preCard = page.getByRole('region', { name: 'Pre-Workout Snack' });
+      await expect(preCard).toBeVisible();
+      await fillMealCard(preCard, { name: 'Banana', cal: '105', p: '1', c: '27', f: '0' });
+      await expect(preCard.getByText(/105 cal · P 1g · C 27g · F 0g/)).toBeVisible({
+        timeout: 15_000,
+      });
+
+      const bedCard = page.getByRole('region', { name: 'Bedtime Snack' });
+      await fillMealCard(bedCard, { name: 'Casein shake', cal: '120', p: '24', c: '3', f: '1' });
+      await expect(bedCard.getByText(/120 cal · P 24g · C 3g · F 1g/)).toBeVisible({
+        timeout: 15_000,
+      });
+
+      // --- Persistence: reload, reselect the date, verify each card.
+      await page.reload();
+      await expect(page.getByRole('heading', { name: "Today's Meals" })).toBeVisible();
+      await page.getByLabel('Date').fill(smokeDate);
+      const preCardAfter = page.getByRole('region', { name: 'Pre-Workout Snack' });
+      await expect(preCardAfter.getByText('Banana')).toBeVisible({ timeout: 15_000 });
+      await expect(preCardAfter.getByText(/105 cal · P 1g · C 27g · F 0g/)).toBeVisible();
+      const bedCardAfter = page.getByRole('region', { name: 'Bedtime Snack' });
+      await expect(bedCardAfter.getByText('Casein shake')).toBeVisible();
+      await expect(bedCardAfter.getByText(/120 cal · P 24g · C 3g · F 1g/)).toBeVisible();
+
+      // --- Visible daily totals: 225 cal, P 25, C 30, F 1.
+      const summary = page.getByRole('region', { name: 'Daily total' });
+      await expect(summary.getByText('225', { exact: true })).toBeVisible();
+      await expect(summary.getByText('25g', { exact: true })).toBeVisible();
+      await expect(summary.getByText('30g', { exact: true })).toBeVisible();
+      await expect(summary.getByText('1g', { exact: true })).toBeVisible();
+
+      // --- API: save_meal resynced the daily_logs totals.
+      const { data: dailyRow, error: dailyRowError } = await apiA
+        .from('daily_logs')
+        .select('id,daily_calories,daily_protein_g,daily_carbs_g,daily_fat_g')
+        .eq('user_id', userAId)
+        .eq('log_date', smokeDate)
+        .single();
+      expect(dailyRowError).toBeNull();
+      expect(dailyRow?.daily_calories).toBe(225);
+      expect(Number(dailyRow?.daily_protein_g)).toBe(25);
+      expect(Number(dailyRow?.daily_carbs_g)).toBe(30);
+      expect(Number(dailyRow?.daily_fat_g)).toBe(1);
+
+      // --- Two-user isolation as user B: rows hidden, cross-user write rejected.
+      const { error: authBError } = await apiB.auth.signInWithPassword({
+        email: smokeUserBEmail!,
+        password: smokeUserBPassword!,
+      });
+      expect(authBError).toBeNull();
+
+      const { data: bVisibleMeals, error: bReadError } = await apiB
+        .from('meal_logs')
+        .select('id')
+        .eq('daily_log_id', dailyRow!.id);
+      expect(bReadError).toBeNull();
+      expect(bVisibleMeals).toEqual([]);
+
+      const { error: bSaveError } = await apiB.rpc('save_meal', {
+        p_daily_log_id: dailyRow!.id,
+        p_meal_slot: 'bedtime_snack',
+        p_meal_time: '20:00',
+        p_raw_input: null,
+        p_foods: [],
+      });
+      expect(bSaveError).not.toBeNull();
+    } finally {
+      if (userAId) {
+        // Delete the far-future daily log (cascade removes meal rows), verify.
+        const { error: cleanupError } = await apiA
+          .from('daily_logs')
+          .delete()
+          .eq('user_id', userAId)
+          .eq('log_date', smokeDate);
+        expect(cleanupError).toBeNull();
+        const { data: afterCleanup, error: verifyCleanupError } = await apiA
+          .from('daily_logs')
+          .select('id')
+          .eq('user_id', userAId)
+          .eq('log_date', smokeDate);
+        expect(verifyCleanupError).toBeNull();
+        expect(afterCleanup).toEqual([]);
+      }
+      await apiA.auth.signOut();
+      await apiB.auth.signOut();
+    }
+  });
+});
+
 test.describe('authenticated commercial-gym catalog smoke', () => {
   test.skip(
     !hasCatalogSmokeCredentials,
