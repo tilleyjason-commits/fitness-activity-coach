@@ -1,13 +1,40 @@
-name: Authenticated smoke test
+name: PR quality gate and authenticated smoke
 
+# `pull_request` (not `pull_request_target`) so fork PRs run with no secrets
+# and a read-only token. The smoke job additionally guards itself so it is
+# skipped, rather than failing, when secrets are unavailable.
 on:
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint, typecheck, test, build
+        run: npm run verify
+
   smoke:
+    # Same-repo PRs and manual runs only: fork PRs never receive secrets and
+    # must not perform authenticated production writes.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
