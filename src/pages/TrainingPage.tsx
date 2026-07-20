@@ -113,6 +113,9 @@ export default function TrainingPage() {
 
   // True when local workout state has edits not yet handed to the autosaver.
   const dirtyRef = useRef(false);
+  // StrictMode can overlap mount loads. Only the newest request may publish
+  // state, and starting a workout invalidates any request still in flight.
+  const loadWorkoutRequestRef = useRef(0);
 
   // Single-flight coalescing autosave: one save in flight, newest snapshot
   // wins, stale completions ignored (see src/lib/autosave.ts).
@@ -139,6 +142,7 @@ export default function TrainingPage() {
   }, [user]);
 
   const loadWorkout = useCallback(async () => {
+    const requestId = ++loadWorkoutRequestRef.current;
     if (!user) return;
     setLoading(true);
     setLoadError(null);
@@ -149,6 +153,7 @@ export default function TrainingPage() {
         getRestTimerDefaultSeconds(user.id),
         hasCompletedWorkout(user.id, today),
       ]);
+      if (requestId !== loadWorkoutRequestRef.current) return;
       dirtyRef.current = false;
       setRestDefaultSeconds(restDefault);
       setCompletedToday(alreadyCompleted);
@@ -166,9 +171,10 @@ export default function TrainingPage() {
         setWorkout(active);
       }
     } catch (e) {
+      if (requestId !== loadWorkoutRequestRef.current) return;
       setLoadError(e instanceof Error ? e.message : 'Failed to load workout');
     } finally {
-      setLoading(false);
+      if (requestId === loadWorkoutRequestRef.current) setLoading(false);
     }
   }, [user, today]);
 
@@ -205,6 +211,7 @@ export default function TrainingPage() {
   }, []);
 
   function startWorkout(routine?: DailyRoutine) {
+    loadWorkoutRequestRef.current += 1;
     setSaveError(null);
     dirtyRef.current = true;
     setWorkout(

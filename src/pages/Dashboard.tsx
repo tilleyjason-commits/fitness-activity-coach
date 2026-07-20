@@ -1,11 +1,24 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import { CheckCircle2, Dumbbell, Moon, UtensilsCrossed, type LucideIcon } from 'lucide-react';
+import { CheckCircle2, Dumbbell, Moon, Pill, UtensilsCrossed, type LucideIcon } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
-import { dismissRecommendation, getProfile, getRecentWeighIns, syncRecommendations } from '~/lib/db';
+import { useSupplements } from '~/hooks/useSupplements';
+import {
+  dismissRecommendation,
+  getProfile,
+  getRecentWeighIns,
+  reconcileInapplicableRecommendations,
+  syncRecommendations,
+} from '~/lib/db';
 import { EMPTY_WEEKLY, evaluateDay, getRuleById } from '~/lib/evaluate';
+import {
+  activeSlugSet,
+  inapplicableSupplementRuleIds,
+  isCanonicalActive,
+  isSupplementRuleApplicable,
+} from '~/lib/supplements';
 import { TARGETS } from '~/lib/constants';
 import { SEVERITY_ORDER, type DailyLog, type Profile, type Recommendation } from '~/lib/types';
 import { StatusDot, type DotStatus } from '~/components/StatusDot';
@@ -18,15 +31,18 @@ interface ComplianceItem {
   status: DotStatus;
 }
 
-/** Green = done/passed, red = logged but failing, gray = not logged yet. */
-function complianceItems(log: DailyLog | null): ComplianceItem[] {
+/**
+ * Green = done/passed, red = logged but failing, gray = not logged yet.
+ * Creatine appears only while the user has an active canonical creatine
+ * supplement (or as a legacy fallback when the list cannot load).
+ */
+function complianceItems(log: DailyLog | null, includeCreatine: boolean): ComplianceItem[] {
   if (!log) {
-    return ['Train', 'Protein', 'Casein', 'Snack', 'Sleep', 'Creatine'].map((label) => ({
-      label,
-      status: 'pending' as const,
-    }));
+    const labels = ['Train', 'Protein', 'Casein', 'Snack', 'Sleep'];
+    if (includeCreatine) labels.push('Creatine');
+    return labels.map((label) => ({ label, status: 'pending' as const }));
   }
-  return [
+  const items: ComplianceItem[] = [
     { label: 'Train', status: log.training_done ? 'pass' : 'pending' },
     {
       label: 'Protein',
@@ -43,8 +59,11 @@ function complianceItems(log: DailyLog | null): ComplianceItem[] {
       label: 'Sleep',
       status: log.sleep_quality === null ? 'pending' : log.sleep_quality >= 3 ? 'pass' : 'fail',
     },
-    { label: 'Creatine', status: log.creatine_taken ? 'pass' : 'pending' },
   ];
+  if (includeCreatine) {
+    items.push({ label: 'Creatine', status: log.creatine_taken ? 'pass' : 'pending' });
+  }
+  return items;
 }
 
 function greeting(): string {
@@ -64,6 +83,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { to: '/log/training', label: 'Training', icon: Dumbbell },
   { to: '/log/nutrition', label: 'Nutrition', icon: UtensilsCrossed },
   { to: '/log/sleep', label: 'Sleep', icon: Moon },
+  { to: '/log/supplements', label: 'Supplements', icon: Pill },
 ];
 
 export default function Dashboard() {
@@ -74,6 +94,18 @@ export default function Dashboard() {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [weighIns, setWeighIns] = useState<DailyLog[]>([]);
+  const {
+    supplements,
+    loading: supplementsLoading,
+    error: supplementsError,
+  } = useSupplements();
+
+  // Legacy fallback: if the list cannot load (e.g. migration 013 not applied
+  // yet), keep the pre-013 behavior of always showing Creatine. While loading,
+  // omit only the Creatine dot so the rest of the row renders without flicker.
+  const showCreatine = supplementsError
+    ? true
+    : !supplementsLoading && isCanonicalActive(supplements, 'creatine');
 
   useEffect(() => {
     if (!user) return;
@@ -88,15 +120,50 @@ export default function Dashboard() {
 
   // Re-evaluate the rules and reconcile the recommendations table whenever
   // today's log changes (profile supplies training_time for timing rules).
+  // Waits for the supplement list so built-in supplement rules sync only when
+  // their canonical slug is active; rules for deactivated supplements are
+  // reconciled away instead. If the list fails to load, fall back to syncing
+  // everything (pre-013 behavior).
   useEffect(() => {
-    if (!user || loading || !profileLoaded) return;
+    if (!user || loading || !profileLoaded || supplementsLoading) return;
     if (!log) {
       setRecs([]);
       return;
     }
+
+    let cancelled = false;
+    const userId = user.id;
     const results = evaluateDay(log, EMPTY_WEEKLY, profile);
-    syncRecommendations(user.id, today, results).then(setRecs).catch(console.error);
-  }, [user, log, loading, profile, profileLoaded, today]);
+
+    async function refreshRecommendations() {
+      try {
+        let next: Recommendation[];
+        if (supplementsError) {
+          next = await syncRecommendations(userId, today, results);
+        } else {
+          const activeSlugs = activeSlugSet(supplements);
+          const applicable = results.filter((result) =>
+            isSupplementRuleApplicable(result.rule.id, activeSlugs),
+          );
+          // Derive this from the complete canonical map rather than today's
+          // evaluated results. A disabled rule may not evaluate today (for
+          // example, magnesium without a logged bedtime), but any stale
+          // recommendation must still hide.
+          const inapplicableIds = inapplicableSupplementRuleIds(activeSlugs);
+          await reconcileInapplicableRecommendations(userId, today, inapplicableIds);
+          next = await syncRecommendations(userId, today, applicable);
+        }
+        if (!cancelled) setRecs(next);
+      } catch (error) {
+        if (!cancelled) console.error('Failed to refresh recommendations:', error);
+      }
+    }
+
+    void refreshRecommendations();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, log, loading, profile, profileLoaded, today, supplements, supplementsLoading, supplementsError]);
 
   const sortedRecs = useMemo(
     () => [...recs].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
@@ -135,14 +202,14 @@ export default function Dashboard() {
       <section className="card mb-4" aria-label="Today's compliance">
         <h2 className="section-title">Today</h2>
         <div className="flex items-start justify-between">
-          {complianceItems(log).map((item) => (
+          {complianceItems(log, showCreatine).map((item) => (
             <StatusDot key={item.label} status={item.status} label={item.label} />
           ))}
         </div>
       </section>
 
       <section className="mb-4" aria-label="Quick actions">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {QUICK_ACTIONS.map(({ to, label, icon: Icon }) => (
             <Link
               key={to}
@@ -158,7 +225,7 @@ export default function Dashboard() {
 
       <section className="mb-4" aria-label="Recommendations">
         <h2 className="section-title">Recommendations</h2>
-        {loading ? (
+        {loading || supplementsLoading ? (
           <div className="card animate-pulse text-sm text-slate-500 dark:text-slate-400">
             Evaluating today&apos;s rules…
           </div>

@@ -18,6 +18,7 @@ const LogWeight = lazy(() => import('~/pages/LogWeight'));
 const MacroTrackerPage = lazy(() => import('~/pages/MacroTrackerPage'));
 const WeeklySummary = lazy(() => import('~/pages/WeeklySummary'));
 const Settings = lazy(() => import('~/pages/Settings'));
+const ManageSupplements = lazy(() => import('~/pages/ManageSupplements'));
 const SetupWizard = lazy(() => import('~/pages/SetupWizard'));
 
 function LoadingScreen() {
@@ -98,6 +99,7 @@ export default function App() {
             <Route path="/macros" element={<MacroTrackerPage />} />
             <Route path="/weekly" element={<WeeklySummary />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/settings/supplements" element={<ManageSupplements />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

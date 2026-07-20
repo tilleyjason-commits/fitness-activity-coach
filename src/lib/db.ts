@@ -14,6 +14,9 @@ import type {
   Profile,
   Recommendation,
   RecommendationInsert,
+  SupplementLogRow,
+  UserSupplement,
+  UserSupplementInsert,
   WeeklySummary,
   WeeklySummaryInsert,
 } from './types';
@@ -200,9 +203,15 @@ export async function syncRecommendations(
           dismissed: false,
         });
       } else if (current.passed || current.message !== result.message) {
+        // A row the system auto-dismissed (on pass or on supplement
+        // deactivation) carries passed=true; when its rule fails again it must
+        // resurface, so clear dismissed too. Manual dismissals of live
+        // failures (passed=false, dismissed=true) are left untouched.
+        const patch: Partial<Recommendation> = { passed: false, message: result.message };
+        if (current.passed) patch.dismissed = false;
         const { error } = await supabase
           .from('recommendations')
-          .update({ passed: false, message: result.message })
+          .update(patch)
           .eq('id', current.id);
         if (error) throw new Error(error.message);
       }
@@ -222,6 +231,28 @@ export async function syncRecommendations(
 
   const refreshed = await getRecommendations(userId, logDate);
   return refreshed.filter((rec) => !rec.passed && !rec.dismissed);
+}
+
+/**
+ * Hide recommendations whose rules no longer apply (their built-in supplement
+ * was deactivated/removed). Rows are marked passed+dismissed — the same state
+ * a passing rule reaches — so syncRecommendations can resurface them if the
+ * supplement is reactivated and its rule fails again.
+ */
+export async function reconcileInapplicableRecommendations(
+  userId: string,
+  logDate: string,
+  ruleIds: string[],
+): Promise<void> {
+  if (ruleIds.length === 0) return;
+  const { error } = await supabase
+    .from('recommendations')
+    .update({ passed: true, dismissed: true })
+    .eq('user_id', userId)
+    .eq('log_date', logDate)
+    .in('rule_id', ruleIds)
+    .eq('passed', false);
+  if (error) throw new Error(error.message);
 }
 
 /* ------------------------------------------------------------------ */
@@ -299,6 +330,94 @@ export async function calculateMacros(
     throw new Error('Macro calculator returned an unexpected response.');
   }
   return data;
+}
+
+/* ------------------------------------------------------------------ */
+/* User supplements (migration 013)                                    */
+/* ------------------------------------------------------------------ */
+
+export async function listSupplements(userId: string): Promise<UserSupplement[]> {
+  const { data, error } = await supabase
+    .from('user_supplements')
+    .select('*')
+    .eq('user_id', userId)
+    .order('active', { ascending: false })
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as UserSupplement[];
+}
+
+/**
+ * Insert one supplement. Built-in quick-add passes the canonical slug; custom
+ * rows omit slug so the database generates one. No defaults are ever seeded —
+ * every row is an explicit user choice.
+ */
+export async function addSupplement(input: UserSupplementInsert): Promise<UserSupplement> {
+  const { data, error } = await supabase
+    .from('user_supplements')
+    .insert(input)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as UserSupplement;
+}
+
+export async function updateSupplement(
+  id: string,
+  patch: Partial<
+    Pick<
+      UserSupplement,
+      'name' | 'dose_amount' | 'dose_unit' | 'instructions' | 'active' | 'sort_order'
+    >
+  >,
+): Promise<UserSupplement> {
+  const { data, error } = await supabase
+    .from('user_supplements')
+    .update(patch)
+    .eq('id', id)
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as UserSupplement;
+}
+
+/** Hard delete; supplement_logs cascade. Legacy daily_logs history is untouched. */
+export async function deleteSupplement(id: string): Promise<void> {
+  const { error } = await supabase.from('user_supplements').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function getSupplementLogs(
+  userId: string,
+  logDate: string,
+): Promise<SupplementLogRow[]> {
+  const { data, error } = await supabase
+    .from('supplement_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('log_date', logDate);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SupplementLogRow[];
+}
+
+/**
+ * The ONLY write path for taken/untaken: the set_supplement_taken RPC
+ * (migration 013) writes the presence row and syncs the matching legacy
+ * daily_logs boolean server-side in one transaction. No client-side dual
+ * write or fallback — failures surface as retryable errors.
+ */
+export async function setSupplementTaken(
+  supplementId: string,
+  logDate: string,
+  taken: boolean,
+): Promise<void> {
+  const { error } = await supabase.rpc('set_supplement_taken', {
+    p_supplement_id: supplementId,
+    p_log_date: logDate,
+    p_taken: taken,
+  });
+  if (error) throw new Error(`Supplement save failed (set_supplement_taken): ${error.message}`);
 }
 
 export async function upsertWeeklySummary(summary: WeeklySummaryInsert): Promise<WeeklySummary> {
