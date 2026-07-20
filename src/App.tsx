@@ -3,21 +3,22 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { NavBar } from '~/components/NavBar';
 import { getProfile } from '~/lib/db';
-import { useEffect, useState } from 'react';
-import Login from '~/pages/Login';
-import Dashboard from '~/pages/Dashboard';
-import TrainingPage from '~/pages/TrainingPage';
-import RoutinesPage from '~/pages/RoutinesPage';
-import LogTraining from '~/pages/LogTraining';
-import LogNutrition from '~/pages/LogNutrition';
-import LogSupplements from '~/pages/LogSupplements';
-import LogSleep from '~/pages/LogSleep';
-import LogSubjective from '~/pages/LogSubjective';
-import LogWeight from '~/pages/LogWeight';
-import MacroTrackerPage from '~/pages/MacroTrackerPage';
-import WeeklySummary from '~/pages/WeeklySummary';
-import Settings from '~/pages/Settings';
-import SetupWizard from '~/pages/SetupWizard';
+import { lazy, Suspense, useEffect, useState } from 'react';
+
+const Login = lazy(() => import('~/pages/Login'));
+const Dashboard = lazy(() => import('~/pages/Dashboard'));
+const TrainingPage = lazy(() => import('~/pages/TrainingPage'));
+const RoutinesPage = lazy(() => import('~/pages/RoutinesPage'));
+const LogTraining = lazy(() => import('~/pages/LogTraining'));
+const LogNutrition = lazy(() => import('~/pages/LogNutrition'));
+const LogSupplements = lazy(() => import('~/pages/LogSupplements'));
+const LogSleep = lazy(() => import('~/pages/LogSleep'));
+const LogSubjective = lazy(() => import('~/pages/LogSubjective'));
+const LogWeight = lazy(() => import('~/pages/LogWeight'));
+const MacroTrackerPage = lazy(() => import('~/pages/MacroTrackerPage'));
+const WeeklySummary = lazy(() => import('~/pages/WeeklySummary'));
+const Settings = lazy(() => import('~/pages/Settings'));
+const SetupWizard = lazy(() => import('~/pages/SetupWizard'));
 
 function LoadingScreen() {
   return (
@@ -75,30 +76,32 @@ function AuthGuard() {
   );
 }
 
-/** HashRouter so the app works from GH Pages / file-relative deploys (vite base './'). */
+/** HashRouter keeps client-side routes compatible with static GitHub Pages hosting. */
 export default function App() {
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        {/* Outside the AuthGuard so no NavBar renders; SetupWizard checks auth itself. */}
-        <Route path="/setup" element={<SetupWizard />} />
-        <Route element={<AuthGuard />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/training" element={<TrainingPage />} />
-          <Route path="/routines" element={<RoutinesPage />} />
-          <Route path="/log/training" element={<LogTraining />} />
-          <Route path="/log/nutrition" element={<LogNutrition />} />
-          <Route path="/log/supplements" element={<LogSupplements />} />
-          <Route path="/log/sleep" element={<LogSleep />} />
-          <Route path="/log/subjective" element={<LogSubjective />} />
-          <Route path="/log/weight" element={<LogWeight />} />
-          <Route path="/macros" element={<MacroTrackerPage />} />
-          <Route path="/weekly" element={<WeeklySummary />} />
-          <Route path="/settings" element={<Settings />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Suspense fallback={<LoadingScreen />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          {/* Outside the AuthGuard so no NavBar renders; SetupWizard checks auth itself. */}
+          <Route path="/setup" element={<SetupWizard />} />
+          <Route element={<AuthGuard />}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/training" element={<TrainingPage />} />
+            <Route path="/routines" element={<RoutinesPage />} />
+            <Route path="/log/training" element={<LogTraining />} />
+            <Route path="/log/nutrition" element={<LogNutrition />} />
+            <Route path="/log/supplements" element={<LogSupplements />} />
+            <Route path="/log/sleep" element={<LogSleep />} />
+            <Route path="/log/subjective" element={<LogSubjective />} />
+            <Route path="/log/weight" element={<LogWeight />} />
+            <Route path="/macros" element={<MacroTrackerPage />} />
+            <Route path="/weekly" element={<WeeklySummary />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
     </HashRouter>
   );
 }

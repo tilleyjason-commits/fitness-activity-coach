@@ -36,7 +36,10 @@ vi.mock('~/context/AuthContext', () => ({
 async function fillWizardToFinish() {
   const user = userEvent.setup();
   render(
-    <MemoryRouter initialEntries={['/setup']}>
+    <MemoryRouter
+      initialEntries={['/setup']}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <SetupWizard />
     </MemoryRouter>,
   );

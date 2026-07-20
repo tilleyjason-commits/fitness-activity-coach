@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { CheckCircle2, Dumbbell, Moon, UtensilsCrossed, type LucideIcon } from 'lucide-react';
-import { Line, LineChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
 import { dismissRecommendation, getProfile, getRecentWeighIns, syncRecommendations } from '~/lib/db';
 import { EMPTY_WEEKLY, evaluateDay, getRuleById } from '~/lib/evaluate';
-import { CHART, TARGETS } from '~/lib/constants';
+import { TARGETS } from '~/lib/constants';
 import { SEVERITY_ORDER, type DailyLog, type Profile, type Recommendation } from '~/lib/types';
 import { StatusDot, type DotStatus } from '~/components/StatusDot';
 import { RecommendationCard } from '~/components/RecommendationCard';
+
+const WeightSparkline = lazy(() => import('~/components/WeightSparkline'));
 
 interface ComplianceItem {
   label: string;
@@ -112,7 +113,6 @@ export default function Dashboard() {
         })),
     [weighIns],
   );
-  const latestWeight = sparkData.length > 0 ? sparkData[sparkData.length - 1].weight : null;
 
   async function handleDismiss(id: string) {
     setRecs((current) => current.filter((r) => r.id !== id));
@@ -122,8 +122,6 @@ export default function Dashboard() {
       console.error(e);
     }
   }
-
-  const isDark = document.documentElement.classList.contains('dark');
 
   return (
     <div>
@@ -189,39 +187,15 @@ export default function Dashboard() {
       </section>
 
       {sparkData.length >= 2 && (
-        <section className="card" aria-label="Weight trend">
-          <div className="mb-1 flex items-baseline justify-between">
-            <h2 className="section-title mb-0">Weight trend</h2>
-            {latestWeight !== null && (
-              <span className="text-sm font-semibold">{latestWeight} lb</span>
-            )}
-          </div>
-          <div className="h-16">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={sparkData} margin={{ top: 6, right: 4, bottom: 0, left: 4 }}>
-                <Tooltip
-                  contentStyle={{
-                    background: isDark ? '#0f172a' : '#ffffff',
-                    border: `1px solid ${isDark ? CHART.gridDark : CHART.gridLight}`,
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                  labelStyle={{ color: CHART.textMuted }}
-                  itemStyle={{ color: isDark ? '#f1f5f9' : '#0f172a' }}
-                  formatter={(value: number) => [`${value} lb`, 'Weight']}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="weight"
-                  stroke={CHART.primary}
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+        <Suspense
+          fallback={(
+            <section className="card animate-pulse" aria-label="Weight trend">
+              <h2 className="section-title mb-0">Weight trend</h2>
+            </section>
+          )}
+        >
+          <WeightSparkline data={sparkData} />
+        </Suspense>
       )}
     </div>
   );
