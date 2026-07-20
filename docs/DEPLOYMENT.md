@@ -8,8 +8,9 @@ Ship in this order — each step depends on the previous one being live:
    - `009_profile_ownership.sql` — profiles `id`/`user_id` contract (backfill + CHECK).
    - `010_macro_rate_limit.sql` — `macro_calc_attempts` table + `consume_macro_calc_quota()` RPC.
    - `011_transactional_saves.sql` — transactional replacement RPCs (`save_workout`, `save_routine`, `save_meal`, `delete_meal`, `replace_exercise_logs`).
+   - `012_fix_workout_set_rls.sql` — separates workout-exercise and set inserts so the set RLS policy can observe the newly inserted parent row.
 
-   Apply with `supabase db push` (or paste into the SQL editor in order). All three
+   Apply with `supabase db push` (or paste into the SQL editor in order). All four
    are additive and idempotent; they can be re-run safely.
 
 2. **Edge Function**: `supabase functions deploy calculate-macros`.
@@ -53,6 +54,6 @@ be user-visible.
   unit/component tests → production build.
 - Authenticated Playwright smoke (`npm run test:e2e`) reads credentials from the
   gitignored `.env.smoke.local` (`SMOKE_USER_EMAIL`, `SMOKE_USER_PASSWORD`,
-  `SMOKE_USER_ID`). Never commit these values. In CI this is an **optional**,
-  manually-triggered job that requires the same names as GitHub secrets — see
-  `.github/workflows/smoke.yml`. It is not run on fork PRs.
+  `SMOKE_USER_ID`). Never commit these values. In CI it runs after the quality
+  gate for same-repository PRs and can also be triggered manually after merge;
+  it requires the same names as GitHub secrets. It never runs on fork PRs.
