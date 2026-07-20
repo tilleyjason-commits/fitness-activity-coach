@@ -1,5 +1,5 @@
 import rulesJson from '../../rules/rules.json';
-import { muscleForExercise } from './constants';
+import { MEAL_TIMING, muscleForExercise } from './constants';
 import type { DailyLog, ExerciseLog, Profile, Severity } from './types';
 import { SEVERITY_ORDER } from './types';
 
@@ -206,6 +206,15 @@ export function toHHMM(time: string | null): string | null {
   return time.length > 5 ? time.slice(0, 5) : time;
 }
 
+/** Compare a logged caffeine time against the configured cutoff. */
+export function isCaffeineBeforeCutoff(
+  time: string | null,
+  cutoff: string = MEAL_TIMING.caffeineCutoff,
+): boolean {
+  const normalized = toHHMM(time);
+  return normalized !== null && normalized < cutoff;
+}
+
 export interface WeeklyDerived {
   weekly_sets_per_muscle: number | null;
   weekly_face_pulls: number | null;
@@ -382,7 +391,7 @@ export function computeAreaScores(weekLogs: DailyLog[]): AreaScore[] {
     const caffeine = toHHMM(log.last_caffeine_time);
     if (caffeine !== null) {
       caffeineTotal += 1;
-      if (caffeine < '14:00') caffeinePass += 1;
+      if (isCaffeineBeforeCutoff(caffeine)) caffeinePass += 1;
     }
     if (log.sleep_quality !== null) {
       sleepTotal += 1;

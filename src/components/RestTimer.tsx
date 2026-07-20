@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Check, Pause, Play, RotateCcw, X } from 'lucide-react';
+import {
+  applyDuration,
+  createTimer,
+  isFinished,
+  pauseTimer,
+  remainingSeconds,
+  resetTimer,
+  startTimer,
+} from '~/lib/rest-timer';
 
 const PRESETS = [30, 60, 90, 120, 180];
 
@@ -19,36 +28,39 @@ interface RestTimerProps {
 
 /** Bottom-sheet rest countdown between sets: ready → running → finished (auto-dismiss). */
 export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDefault }: RestTimerProps) {
-  const [totalSeconds, setTotalSeconds] = useState(initialSeconds);
-  const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
-  const [running, setRunning] = useState(false);
+  const [timer, setTimer] = useState(() => createTimer(initialSeconds));
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [finished, setFinished] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const totalSeconds = timer.totalSeconds;
+  const secondsLeft = remainingSeconds(timer, nowMs);
+  const running = timer.running;
 
   // Auto-start when a set is logged (parent bumps autoStartKey).
   useEffect(() => {
     if (autoStartKey === undefined) return;
-    setTotalSeconds(initialSeconds);
-    setSecondsLeft(initialSeconds);
+    const now = Date.now();
+    setNowMs(now);
+    setTimer(startTimer(createTimer(initialSeconds), now));
     setFinished(false);
-    setRunning(true);
   }, [autoStartKey, initialSeconds]);
 
-  // 1-second tick while running; interval cleaned up on pause/unmount.
+  // Refresh the display while running. Remaining time is calculated from the
+  // absolute deadline, so background throttling/phone lock cannot extend rest.
   useEffect(() => {
     if (!running) return;
     const id = window.setInterval(() => {
-      setSecondsLeft((s) => Math.max(0, s - 1));
-    }, 1000);
+      setNowMs(Date.now());
+    }, 250);
     return () => window.clearInterval(id);
   }, [running]);
 
   useEffect(() => {
-    if (secondsLeft === 0 && running) {
-      setRunning(false);
+    if (running && isFinished(timer, nowMs)) {
+      setTimer((current) => pauseTimer(current, nowMs));
       setFinished(true);
     }
-  }, [secondsLeft, running]);
+  }, [nowMs, running, timer]);
 
   // Finished state auto-dismisses after 3 seconds.
   useEffect(() => {
@@ -58,11 +70,11 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
   }, [finished, onClose]);
 
   function applyPreset(seconds: number) {
-    setTotalSeconds(seconds);
-    setSecondsLeft(seconds);
+    const now = Date.now();
+    setNowMs(now);
+    setTimer((current) => applyDuration(current, seconds, now));
     setFinished(false);
     setSaveMessage('');
-    setRunning(true);
   }
 
   const progress = totalSeconds > 0 ? secondsLeft / totalSeconds : 0;
@@ -136,7 +148,11 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
           {running ? (
             <button
               type="button"
-              onClick={() => setRunning(false)}
+              onClick={() => {
+                const now = Date.now();
+                setNowMs(now);
+                setTimer((current) => pauseTimer(current, now));
+              }}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-600"
             >
               <Pause className="h-4 w-4" />
@@ -146,8 +162,10 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
             <button
               type="button"
               onClick={() => {
+                const now = Date.now();
+                setNowMs(now);
                 setFinished(false);
-                setRunning(true);
+                setTimer((current) => startTimer(current, now));
               }}
               disabled={secondsLeft === 0}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -159,9 +177,9 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
           <button
             type="button"
             onClick={() => {
-              setRunning(false);
+              setTimer((current) => resetTimer(current));
+              setNowMs(Date.now());
               setFinished(false);
-              setSecondsLeft(totalSeconds);
             }}
             className="flex items-center justify-center gap-2 rounded-xl bg-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
             aria-label="Reset timer"

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from '~/App';
+import { ErrorBoundary } from '~/components/ErrorBoundary';
 import { AuthProvider } from '~/context/AuthContext';
 import { applyTheme, getStoredTheme } from '~/lib/theme';
 import '~/index.css';
@@ -14,8 +15,10 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </ErrorBoundary>
   </StrictMode>,
 );

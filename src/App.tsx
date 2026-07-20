@@ -30,15 +30,18 @@ function LoadingScreen() {
 /** Redirects unauthenticated visitors to /login; redirects new users to /setup. */
 function AuthGuard() {
   const { user, loading } = useAuth();
-  const [profileReady, setProfileReady] = useState<boolean>(() => !user);
+  const [profileState, setProfileState] = useState<{
+    userId: string;
+    ready: boolean;
+  } | null>(null);
 
   useEffect(() => {
-    if (!user || loading) {
-      if (!user && !loading) setProfileReady(true);
-      return;
-    }
+    if (!user || loading) return;
+    let active = true;
+    setProfileState(null);
     getProfile(user.id)
       .then((p) => {
+        if (!active) return;
         // Profile exists if any meaningful field was ever set (age/height from wizard,
         // or weight/bodyfat from old Settings page). If all null, it's a brand-new user
         // who needs the setup wizard.
@@ -46,14 +49,23 @@ function AuthGuard() {
           p.age !== null || p.height_cm !== null ||
           p.weight_lb !== null || p.bodyfat_pct !== null
         );
-        setProfileReady(hasData);
+        setProfileState({ userId: user.id, ready: hasData });
       })
-      .catch(() => setProfileReady(true)); // fail open — network error shouldn't block
+      .catch(() => {
+        if (active) setProfileState({ userId: user.id, ready: true });
+      }); // fail open — a network error should not trap an existing user
+    return () => {
+      active = false;
+    };
   }, [user, loading]);
 
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
-  if (!profileReady) return <Navigate to="/setup" replace />;
+  // Do not redirect to setup until this specific user's profile lookup settles.
+  // The old boolean initialized false and redirected every existing user to
+  // /setup before the async lookup could complete.
+  if (profileState === null || profileState.userId !== user.id) return <LoadingScreen />;
+  if (!profileState.ready) return <Navigate to="/setup" replace />;
 
   return (
     <div className="mx-auto min-h-screen w-full max-w-md px-4 pb-28 pt-6">

@@ -77,6 +77,20 @@ function num(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Blank row for manual entry — the fallback when AI is unavailable. */
+function emptyDraft(): FoodDraft {
+  return {
+    food_name: '',
+    quantity: '',
+    unit: '',
+    calories: '',
+    protein_g: '',
+    carbs_g: '',
+    fat_g: '',
+    confidence: null,
+  };
+}
+
 function draftTotals(drafts: FoodDraft[]) {
   return drafts.reduce(
     (acc, d) => ({
@@ -190,6 +204,13 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
     setState('results');
   }
 
+  /** Manual entry stays available when AI fails (or is never used). */
+  function addManualFood() {
+    setError(null);
+    setDrafts((prev) => [...prev, emptyDraft()]);
+    setState('results');
+  }
+
   function updateDraft(index: number, patch: Partial<FoodDraft>) {
     setDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
   }
@@ -284,14 +305,25 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
         </>
       ) : state === 'error' ? (
         <>
-          <p className="mb-3 text-sm text-red-500">{error ?? 'Something went wrong.'}</p>
-          <button
-            type="button"
-            onClick={() => setState(drafts.length > 0 ? 'results' : 'idle')}
-            className="w-full rounded-xl bg-slate-200 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
-          >
-            Try again
-          </button>
+          <p role="alert" className="mb-3 text-sm text-red-500">
+            {error ?? 'Something went wrong.'}
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => setState(drafts.length > 0 ? 'results' : 'idle')}
+              className="w-full rounded-xl bg-slate-200 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600"
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              onClick={addManualFood}
+              className="w-full rounded-xl border border-slate-300 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              Add food manually
+            </button>
+          </div>
         </>
       ) : (
         <>
@@ -442,6 +474,15 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
               </button>
             )}
           </div>
+
+          <button
+            type="button"
+            onClick={addManualFood}
+            disabled={busy}
+            className="mt-2 w-full rounded-xl border border-dashed border-slate-300 py-2 text-sm font-medium text-slate-500 transition-colors hover:border-slate-400 hover:text-slate-700 disabled:opacity-50 dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500 dark:hover:text-slate-200"
+          >
+            + Add food manually
+          </button>
         </>
       )}
     </section>

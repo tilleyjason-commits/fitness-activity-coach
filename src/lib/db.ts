@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { describeFunctionsInvokeError } from './macro-errors';
 import type { RuleResult } from './evaluate';
 import type {
   DailyLog,
@@ -9,7 +10,6 @@ import type {
   MealFood,
   MealFoodInsert,
   MealLog,
-  MealLogInsert,
   MealSlot,
   Profile,
   Recommendation,
@@ -47,9 +47,12 @@ export async function hasProfile(userId: string): Promise<boolean> {
 }
 
 export async function upsertProfile(profile: Profile): Promise<Profile> {
+  // Ownership contract: id and user_id are both auth.uid(). Normalize here so
+  // every caller sends a schema-valid payload (profiles.user_id is NOT NULL).
+  const payload: Profile = { ...profile, user_id: profile.user_id || profile.id };
   const { data, error } = await supabase
     .from('profiles')
-    .upsert(profile, { onConflict: 'id' })
+    .upsert(payload, { onConflict: 'id' })
     .select()
     .single();
   if (error) throw new Error(error.message);
@@ -116,19 +119,20 @@ export async function getExerciseLogs(dailyLogIds: string[]): Promise<ExerciseLo
   return (data ?? []) as ExerciseLog[];
 }
 
-/** Replace the exercise entries for one training session. */
+/**
+ * Replace the exercise entries for one training session through the
+ * transactional replace_exercise_logs RPC (migration 011). Ownership is
+ * verified server-side against auth.uid(); no destructive client fallback.
+ */
 export async function replaceExerciseLogs(
   dailyLogId: string,
   entries: ExerciseLogInsert[],
 ): Promise<void> {
-  const { error: deleteError } = await supabase
-    .from('exercise_logs')
-    .delete()
-    .eq('daily_log_id', dailyLogId);
-  if (deleteError) throw new Error(deleteError.message);
-  if (entries.length === 0) return;
-  const { error: insertError } = await supabase.from('exercise_logs').insert(entries);
-  if (insertError) throw new Error(insertError.message);
+  const { error } = await supabase.rpc('replace_exercise_logs', {
+    p_daily_log_id: dailyLogId,
+    p_entries: entries.map(({ daily_log_id: _dailyLogId, ...entry }) => entry),
+  });
+  if (error) throw new Error(`Training entries save failed (replace_exercise_logs): ${error.message}`);
 }
 
 export async function getRecommendations(
@@ -245,69 +249,41 @@ export async function getMealFoods(mealLogIds: string[]): Promise<MealFood[]> {
   return (data ?? []) as MealFood[];
 }
 
-/** One row per (daily log, meal slot) — upsert keeps re-saves idempotent. */
-export async function upsertMealLog(log: MealLogInsert): Promise<MealLog> {
-  const { data, error } = await supabase
-    .from('meal_logs')
-    .upsert(log, { onConflict: 'daily_log_id,meal_slot' })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as MealLog;
-}
-
-/** Replace the food rows attached to one meal log. */
-export async function replaceMealFoods(
-  mealLogId: string,
-  foods: Omit<MealFoodInsert, 'meal_log_id'>[],
-): Promise<void> {
-  const { error: deleteError } = await supabase
-    .from('meal_foods')
-    .delete()
-    .eq('meal_log_id', mealLogId);
-  if (deleteError) throw new Error(deleteError.message);
-  if (foods.length === 0) return;
-  const inserts: MealFoodInsert[] = foods.map((food) => ({ ...food, meal_log_id: mealLogId }));
-  const { error: insertError } = await supabase.from('meal_foods').insert(inserts);
-  if (insertError) throw new Error(insertError.message);
-}
-
-/** Delete one meal slot's log; meal_foods cascade in the DB. */
-export async function deleteMealLog(dailyLogId: string, mealSlot: MealSlot): Promise<void> {
-  const { error } = await supabase
-    .from('meal_logs')
-    .delete()
-    .eq('daily_log_id', dailyLogId)
-    .eq('meal_slot', mealSlot);
-  if (error) throw new Error(error.message);
+/** One meal slot's worth of user input, saved as a single aggregate. */
+export interface MealSaveData {
+  rawInput: string;
+  mealTime: string | null;
+  foods: Omit<MealFoodInsert, 'meal_log_id'>[];
 }
 
 /**
- * Re-sum every saved meal for the day into the daily_logs macro columns,
- * which the evaluate engine reads (protein/calorie rules).
+ * Save one meal slot (log row + food rows + daily macro totals) through the
+ * transactional save_meal RPC (migration 011): one atomic round trip, totals
+ * computed server-side, ownership verified against auth.uid(). No destructive
+ * client fallback — failures surface as retryable errors.
  */
-export async function syncDailyTotals(dailyLogId: string): Promise<void> {
-  const meals = await getMealLogs(dailyLogId);
-  const totals = meals.reduce(
-    (acc, meal) => ({
-      calories: acc.calories + (meal.total_calories ?? 0),
-      protein: acc.protein + Number(meal.total_protein_g ?? 0),
-      carbs: acc.carbs + Number(meal.total_carbs_g ?? 0),
-      fat: acc.fat + Number(meal.total_fat_g ?? 0),
-    }),
-    { calories: 0, protein: 0, carbs: 0, fat: 0 },
-  );
-  const patch =
-    meals.length > 0
-      ? {
-          daily_calories: Math.round(totals.calories),
-          daily_protein_g: Math.round(totals.protein * 10) / 10,
-          daily_carbs_g: Math.round(totals.carbs * 10) / 10,
-          daily_fat_g: Math.round(totals.fat * 10) / 10,
-        }
-      : { daily_calories: null, daily_protein_g: null, daily_carbs_g: null, daily_fat_g: null };
-  const { error } = await supabase.from('daily_logs').update(patch).eq('id', dailyLogId);
-  if (error) throw new Error(error.message);
+export async function saveMeal(
+  dailyLogId: string,
+  mealSlot: MealSlot,
+  input: MealSaveData,
+): Promise<void> {
+  const { error } = await supabase.rpc('save_meal', {
+    p_daily_log_id: dailyLogId,
+    p_meal_slot: mealSlot,
+    p_meal_time: input.mealTime,
+    p_raw_input: input.rawInput || null,
+    p_foods: input.foods,
+  });
+  if (error) throw new Error(`Meal save failed (save_meal): ${error.message}`);
+}
+
+/** Delete one meal slot and resync daily totals atomically (delete_meal RPC). */
+export async function deleteMeal(dailyLogId: string, mealSlot: MealSlot): Promise<void> {
+  const { error } = await supabase.rpc('delete_meal', {
+    p_daily_log_id: dailyLogId,
+    p_meal_slot: mealSlot,
+  });
+  if (error) throw new Error(`Meal delete failed (delete_meal): ${error.message}`);
 }
 
 /** Ask the calculate-macros Edge Function (NVIDIA GLM-5.2) to parse a meal description. */
@@ -318,7 +294,7 @@ export async function calculateMacros(
   const { data, error } = await supabase.functions.invoke<MacrosFromAI>('calculate-macros', {
     body: { description, meal_slot: mealSlot },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw new Error(await describeFunctionsInvokeError(error));
   if (!data || !Array.isArray(data.foods)) {
     throw new Error('Macro calculator returned an unexpected response.');
   }

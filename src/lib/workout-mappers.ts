@@ -280,6 +280,44 @@ export function mapRoutineRowsToWeeklyRoutines(
   return weekly;
 }
 
+/** Routine items in RPC/row shape: strength first, then cardio, sort_order in display order. */
+export function mapRoutineItems(routine: DailyRoutine): RoutineItemInsertRow[] {
+  return [
+    ...routine.exercises.map(
+      (item, index): RoutineItemInsertRow => ({
+        item_type: 'strength',
+        exercise_id: item.exercise.id,
+        exercise_name: item.exercise.name,
+        muscle_group: item.exercise.muscleGroup,
+        target_sets: item.targetSets,
+        target_reps: item.targetReps,
+        target_weight: item.targetWeight,
+        cardio_equipment_id: null,
+        cardio_equipment_name: null,
+        duration_minutes: null,
+        distance_miles: null,
+        sort_order: index,
+      }),
+    ),
+    ...routine.cardioExercises.map(
+      (item, index): RoutineItemInsertRow => ({
+        item_type: 'cardio',
+        exercise_id: null,
+        exercise_name: null,
+        muscle_group: null,
+        target_sets: null,
+        target_reps: null,
+        target_weight: null,
+        cardio_equipment_id: item.equipment.id,
+        cardio_equipment_name: item.equipment.name,
+        duration_minutes: item.durationMinutes,
+        distance_miles: item.distanceMiles,
+        sort_order: routine.exercises.length + index,
+      }),
+    ),
+  ];
+}
+
 export function mapRoutineToRows(
   userId: string,
   routine: DailyRoutine,
@@ -291,39 +329,6 @@ export function mapRoutineToRows(
       name: routine.name,
       updated_at: new Date().toISOString(),
     },
-    items: [
-      ...routine.exercises.map(
-        (item, index): RoutineItemInsertRow => ({
-          item_type: 'strength',
-          exercise_id: item.exercise.id,
-          exercise_name: item.exercise.name,
-          muscle_group: item.exercise.muscleGroup,
-          target_sets: item.targetSets,
-          target_reps: item.targetReps,
-          target_weight: item.targetWeight,
-          cardio_equipment_id: null,
-          cardio_equipment_name: null,
-          duration_minutes: null,
-          distance_miles: null,
-          sort_order: index,
-        }),
-      ),
-      ...routine.cardioExercises.map(
-        (item, index): RoutineItemInsertRow => ({
-          item_type: 'cardio',
-          exercise_id: null,
-          exercise_name: null,
-          muscle_group: null,
-          target_sets: null,
-          target_reps: null,
-          target_weight: null,
-          cardio_equipment_id: item.equipment.id,
-          cardio_equipment_name: item.equipment.name,
-          duration_minutes: item.durationMinutes,
-          distance_miles: item.distanceMiles,
-          sort_order: routine.exercises.length + index,
-        }),
-      ),
-    ],
+    items: mapRoutineItems(routine),
   };
 }
