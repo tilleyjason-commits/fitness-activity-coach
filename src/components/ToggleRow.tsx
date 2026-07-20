@@ -6,17 +6,20 @@ interface ToggleRowProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   icon?: ReactNode;
+  /** Blocks interaction while a save for this row is in flight. */
+  disabled?: boolean;
 }
 
 /** Full-width labeled switch row (whole row is the tap target). */
-export function ToggleRow({ label, description, checked, onChange, icon }: ToggleRowProps) {
+export function ToggleRow({ label, description, checked, onChange, icon, disabled }: ToggleRowProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="card flex w-full items-center gap-3 text-left"
+      className="card flex w-full items-center gap-3 text-left disabled:opacity-60"
     >
       {icon && <span className="shrink-0 text-slate-400 dark:text-slate-500">{icon}</span>}
       <span className="min-w-0 flex-1">

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import TrainingPage from '~/pages/TrainingPage';
 import RoutinesPage from '~/pages/RoutinesPage';
@@ -62,15 +64,16 @@ function routinesWithTodayPreset(): WeeklyRoutines {
   return weekly;
 }
 
-function renderTraining(path = '/training') {
-  return render(
+function renderTraining(path = '/training', strict = false) {
+  const page = (
     <MemoryRouter
       initialEntries={[path]}
       future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <TrainingPage />
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  return render(strict ? <StrictMode>{page}</StrictMode> : page);
 }
 
 beforeEach(() => {
@@ -84,6 +87,27 @@ beforeEach(() => {
 });
 
 describe('Training page tab navigation', () => {
+  it('waits for the newest StrictMode load before accepting user action', async () => {
+    const user = userEvent.setup();
+    let resolveNewestLoad!: (value: null) => void;
+    repo.getActiveWorkout
+      .mockResolvedValueOnce(null)
+      .mockImplementationOnce(() => new Promise<null>((resolve) => { resolveNewestLoad = resolve; }));
+
+    renderTraining('/training', true);
+    await waitFor(() => expect(repo.getActiveWorkout).toHaveBeenCalledTimes(2));
+    expect(screen.getByLabelText('Loading workout')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start Blank Workout' })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveNewestLoad(null);
+    });
+    await user.click(await screen.findByRole('button', { name: 'Start Blank Workout' }));
+
+    expect(await screen.findByRole('region', { name: 'Add Exercise' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Start Blank Workout' })).not.toBeInTheDocument();
+  });
+
   it('opens with the Workout tab selected by default', async () => {
     renderTraining();
     const workoutTab = await screen.findByRole('button', { name: 'Workout' });

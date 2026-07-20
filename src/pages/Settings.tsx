@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Loader2, LogOut, Moon, UserRound } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChevronRight, Loader2, LogOut, Moon, Pill, UserRound } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { getProfile, upsertProfile } from '~/lib/db';
 import { applyTheme, getStoredTheme, type Theme } from '~/lib/theme';
@@ -160,6 +160,22 @@ export default function Settings() {
           onChange={handleThemeChange}
           icon={<Moon className="h-5 w-5" aria-hidden />}
         />
+      </section>
+
+      <section className="mb-4" aria-label="Supplements">
+        <h2 className="section-title">Supplements</h2>
+        <Link to="/settings/supplements" className="card flex w-full items-center gap-3">
+          <span className="shrink-0 text-slate-400 dark:text-slate-500">
+            <Pill className="h-5 w-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">Supplements</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Manage your supplement list
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+        </Link>
       </section>
 
       <form onSubmit={handleSubmit} className="mb-4" aria-label="Body stats">

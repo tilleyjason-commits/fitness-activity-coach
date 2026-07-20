@@ -192,6 +192,38 @@ export interface MacrosFromAI {
   };
 }
 
+/** One row of the user's configurable supplement list (migration 013). */
+export interface UserSupplement {
+  id: string;
+  user_id: string;
+  /** Canonical for built-ins ('creatine', …); database-generated for custom rows. */
+  slug: string;
+  name: string;
+  dose_amount: number | null;
+  dose_unit: string | null;
+  instructions: string | null;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Insert shape: id/timestamps are DB-generated; slug defaults for custom rows. */
+export type UserSupplementInsert =
+  Partial<Omit<UserSupplement, 'id' | 'created_at' | 'updated_at'>> & {
+    user_id: string;
+    name: string;
+  };
+
+/** Presence row: existing = taken that day; untoggling deletes it. */
+export interface SupplementLogRow {
+  id: string;
+  user_id: string;
+  supplement_id: string;
+  log_date: string;
+  created_at: string;
+}
+
 export interface Recommendation {
   id: string;
   user_id: string;
