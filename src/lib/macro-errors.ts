@@ -23,7 +23,9 @@ export function macroErrorMessage(status: number | null, body: MacroErrorBody | 
     return `${serverMessage ?? 'You have reached the AI calculation limit for now.'} You can still add foods manually.`;
   }
   if (status === 503 || status === 502 || code === 'provider_unavailable' || code === 'provider_invalid_output') {
-    return `${serverMessage ?? 'The AI service is temporarily unavailable.'} Try again soon or add foods manually.`;
+    // Prefer the server message as-is when it already steers the user to manual entry.
+    if (serverMessage) return serverMessage;
+    return 'The AI service is temporarily unavailable. Try again soon or add foods manually.';
   }
   if (status === 400 || code === 'invalid_request') {
     return serverMessage ?? 'The meal description could not be processed. Adjust it and try again.';

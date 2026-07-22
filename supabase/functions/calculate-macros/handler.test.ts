@@ -121,6 +121,20 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('provider_unavailable');
+    expect(body.error.message).toMatch(/rate-limiting/i);
+    // One initial call + one retry on transient 429.
+    expect(deps.callProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps a provider 401/403 to an API-key guidance message', async () => {
+    deps = makeDeps({
+      callProvider: vi.fn().mockResolvedValue(new Response('forbidden', { status: 403 })),
+    });
+    const handler = createMacroHandler(deps);
+    const res = await handler(post(VALID_BODY, AUTH));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error.message).toMatch(/API key/i);
   });
 
   it('maps malformed provider output to a structured 502 without echoing provider content', async () => {

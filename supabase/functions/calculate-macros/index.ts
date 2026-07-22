@@ -66,6 +66,8 @@ function callProvider(description: string, mealSlot: MealSlot): Promise<Response
   if (!apiKey) {
     return Promise.resolve(new Response('provider key not configured', { status: 500 }));
   }
+  // Prefer a short, non-thinking JSON answer — long reasoning models often trip
+  // free-tier latency / empty-content failures on nutrition parse jobs.
   return fetch(NVIDIA_API_URL, {
     method: 'POST',
     headers: {
@@ -78,8 +80,9 @@ function callProvider(description: string, mealSlot: MealSlot): Promise<Response
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `Meal slot: ${mealSlot}\nMeal description: ${description}` },
       ],
-      temperature: 0.2,
-      max_tokens: 1024,
+      temperature: 0.1,
+      max_tokens: 2048,
+      stream: false,
     }),
   });
 }

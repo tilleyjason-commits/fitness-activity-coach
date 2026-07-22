@@ -164,18 +164,44 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
         );
       }
 
-      // 4. Provider call.
+      // 4. Provider call (one short retry on transient 429/5xx).
       let providerRes: Response;
       try {
         providerRes = await deps.callProvider(description, mealSlot);
+        if (!providerRes.ok && (providerRes.status === 429 || providerRes.status >= 500)) {
+          deps.log(`calculate-macros provider transient status=${providerRes.status}; retrying once`);
+          await new Promise((r) => setTimeout(r, 800));
+          providerRes = await deps.callProvider(description, mealSlot);
+        }
       } catch {
         deps.log('calculate-macros provider network failure');
         return errorResponse(503, 'provider_unavailable', 'The AI provider is unreachable. Try again soon or enter macros manually.');
       }
 
       if (!providerRes.ok) {
-        // Log the status only — provider bodies can echo user content.
+        // Log status only — provider bodies can echo user content or secrets.
         deps.log(`calculate-macros provider error status=${providerRes.status}`);
+        if (providerRes.status === 401 || providerRes.status === 403) {
+          return errorResponse(
+            503,
+            'provider_unavailable',
+            'AI provider rejected the API key. Update NVIDIA_API_KEY in Supabase secrets, or enter macros manually.',
+          );
+        }
+        if (providerRes.status === 429) {
+          return errorResponse(
+            503,
+            'provider_unavailable',
+            'The AI provider is rate-limiting requests right now. Wait a minute and try again, or enter macros manually.',
+          );
+        }
+        if (providerRes.status === 404) {
+          return errorResponse(
+            503,
+            'provider_unavailable',
+            'The configured AI model is unavailable. Check the model id / redeploy calculate-macros, or enter macros manually.',
+          );
+        }
         return errorResponse(
           503,
           'provider_unavailable',
@@ -185,9 +211,20 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
 
       try {
         const completion = (await providerRes.json()) as {
-          choices?: { message?: { content?: string } }[];
+          choices?: {
+            message?: {
+              content?: string | null;
+              reasoning_content?: string | null;
+              reasoning?: string | null;
+            };
+          }[];
         };
-        const content = completion.choices?.[0]?.message?.content;
+        const message = completion.choices?.[0]?.message;
+        const content =
+          message?.content ||
+          message?.reasoning_content ||
+          message?.reasoning ||
+          '';
         if (!content) throw new Error('Empty completion from model');
 
         const parsed = JSON.parse(extractJson(content)) as { foods?: unknown };
