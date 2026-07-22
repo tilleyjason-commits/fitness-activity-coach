@@ -1,5 +1,6 @@
 import { Line, LineChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { CHART } from '~/lib/constants';
+import { useIsDark } from '~/hooks/useIsDark';
 
 interface WeightPoint {
   date: string;
@@ -13,7 +14,7 @@ interface WeightSparklineProps {
 /** Loaded only when the dashboard has enough weigh-ins to render a trend. */
 export default function WeightSparkline({ data }: WeightSparklineProps) {
   const latestWeight = data[data.length - 1]?.weight;
-  const isDark = document.documentElement.classList.contains('dark');
+  const isDark = useIsDark();
 
   return (
     <section className="card" aria-label="Weight trend">

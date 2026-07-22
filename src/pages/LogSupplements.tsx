@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { addDays, format, parseISO } from 'date-fns';
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, Pill, RefreshCw, SlidersHorizontal } from 'lucide-react';
@@ -42,7 +42,7 @@ export default function LogSupplements() {
   return (
     <div>
       <div className="flex items-start justify-between">
-        <PageHeader title="Log Supplements" backTo="/" />
+        <PageHeader title="Log Supplements" backTo="/log" />
         <Link
           to="/settings/supplements"
           aria-label="Manage supplements"

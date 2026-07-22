@@ -1,3 +1,4 @@
+import { Apple, Dumbbell, Milk, Moon, Sun, Sunrise, Zap, type LucideIcon } from 'lucide-react';
 import rulesJson from '../../rules/rules.json';
 import type { MealSlot, Profile } from './types';
 
@@ -148,14 +149,15 @@ export const MEAL_SLOT_LABELS: Record<MealSlot, string> = {
   bedtime_snack: 'Bedtime Snack',
 };
 
-export const MEAL_SLOT_ICONS: Record<MealSlot, string> = {
-  breakfast: '🌅',
-  pre_workout_snack: '⚡',
-  lunch: '☀️',
-  post_gym: '💪',
-  snack: '🍎',
-  dinner: '🌙',
-  bedtime_snack: '🥛',
+/** Typed lucide mapping — matches the app's icon language, renders identically on every platform. */
+export const MEAL_SLOT_ICONS: Record<MealSlot, LucideIcon> = {
+  breakfast: Sunrise,
+  pre_workout_snack: Zap,
+  lunch: Sun,
+  post_gym: Dumbbell,
+  snack: Apple,
+  dinner: Moon,
+  bedtime_snack: Milk,
 };
 
 export function getMealSlotTimes(

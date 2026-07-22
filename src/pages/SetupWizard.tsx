@@ -30,7 +30,23 @@ const EMPTY_DATA: SetupData = {
 };
 
 const STEP_LABELS: Record<Step, string> = { 1: 'About You', 2: 'Stats', 3: 'Goals' };
-const TRAINING_TIMES = ['Morning', 'Midday', 'Afternoon', 'Evening'];
+
+/**
+ * The wizard offers a friendly coarse choice, but training_time is stored as
+ * HH:MM everywhere else (Settings time input, resolveMealTiming meal-slot
+ * hints), so each choice maps to a representative time on save.
+ */
+const TRAINING_TIMES = ['Morning', 'Midday', 'Afternoon', 'Evening'] as const;
+const TRAINING_TIME_HHMM: Record<(typeof TRAINING_TIMES)[number], string> = {
+  Morning: '07:00',
+  Midday: '11:00',
+  Afternoon: '15:00',
+  Evening: '18:00',
+};
+
+function trainingTimeToHHMM(choice: string): string | null {
+  return TRAINING_TIME_HHMM[choice as (typeof TRAINING_TIMES)[number]] ?? null;
+}
 
 function toNum(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
@@ -176,7 +192,7 @@ export default function SetupWizard() {
         goal_bodyfat_pct: toNum(data.goal_bodyfat_pct),
         goal_weight_lb: toNum(data.goal_weight_lb),
         training_years: toNum(data.training_years),
-        training_time: data.training_time || null,
+        training_time: trainingTimeToHHMM(data.training_time),
       });
       // Navigate only after the profile actually saved; a failure keeps the
       // user (and their entered values) on the wizard with a retryable error.
@@ -268,7 +284,7 @@ export default function SetupWizard() {
             </div>
             <div>
               <label htmlFor="setup-training-time" className="label">
-                Sometimes I train at:
+                I usually train:
               </label>
               <select
                 id="setup-training-time"

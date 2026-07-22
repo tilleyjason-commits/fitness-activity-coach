@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Check, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { PageHeader } from '~/components/PageHeader';
+import { TrainingTabs } from '~/components/TrainingTabs';
 import { ExerciseSelector } from '~/components/ExerciseSelector';
 import { getWeeklyRoutines, saveRoutine, saveWorkoutState } from '~/lib/workout-repo';
 import {
@@ -22,7 +23,7 @@ import type {
   WeeklyRoutines,
 } from '~/lib/types';
 
-/** Weekly routine setup: pick a training day (Mon–Fri), edit its preset, save. */
+/** Weekly routine setup: pick any day of the week, edit its preset, save. */
 export default function RoutinesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -32,9 +33,7 @@ export default function RoutinesPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [selectedDay, setSelectedDay] = useState<Weekday>(
-    TRAINING_DAYS.includes(todayWeekday) ? todayWeekday : TRAINING_DAYS[0],
-  );
+  const [selectedDay, setSelectedDay] = useState<Weekday>(todayWeekday);
   const [name, setName] = useState('');
   const [exercises, setExercises] = useState<RoutineExercise[]>([]);
   const [cardioExercises, setCardioExercises] = useState<RoutineCardioExercise[]>([]);
@@ -142,25 +141,11 @@ export default function RoutinesPage() {
     routines !== null && TRAINING_DAYS.every((day) => !routineHasItems(routines[day]));
   const itemCount = exercises.length + cardioExercises.length;
 
-  const tabBase = 'rounded-lg py-2 text-center text-sm font-medium transition-colors';
-  const tabInactive =
-    'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200';
-
   return (
     <div>
-      <PageHeader title="Routines" subtitle="Plan your training week" backTo="/training" />
+      <PageHeader title="Routines" subtitle="Plan your training week" />
 
-      <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700/60 dark:bg-slate-800">
-        <Link to="/training" className={`${tabBase} ${tabInactive}`}>
-          Workout
-        </Link>
-        <Link to="/training?tab=history" className={`${tabBase} ${tabInactive}`}>
-          History
-        </Link>
-        <span className={`${tabBase} bg-emerald-500 text-white`} aria-current="page">
-          Routines
-        </span>
-      </div>
+      <TrainingTabs active="routines" />
 
       {loading ? (
         <div className="flex justify-center py-10">
@@ -188,7 +173,7 @@ export default function RoutinesPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-5 gap-1.5" role="tablist" aria-label="Training days">
+          <div className="grid grid-cols-7 gap-1" role="tablist" aria-label="Training days">
             {TRAINING_DAYS.map((day) => {
               const routine = routines[day];
               const isSelected = selectedDay === day;
@@ -200,22 +185,28 @@ export default function RoutinesPage() {
                   role="tab"
                   aria-selected={isSelected}
                   onClick={() => selectDay(day)}
-                  className={`rounded-xl border px-1 py-2.5 text-center transition-colors ${
+                  className={`min-h-11 rounded-xl border px-0.5 py-2 text-center transition-colors ${
                     isSelected
-                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-500/10'
+                      ? 'border-slate-900 bg-slate-900 dark:border-slate-200 dark:bg-slate-200'
                       : 'border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-slate-600'
                   }`}
                 >
                   <span
                     className={`block text-xs font-semibold ${
-                      isSelected ? 'text-emerald-600 dark:text-emerald-400' : ''
+                      isSelected ? 'text-white dark:text-slate-900' : ''
                     }`}
                   >
                     {day.slice(0, 3)}
                   </span>
-                  <span className="block text-[10px] text-slate-500 dark:text-slate-400">
+                  <span
+                    className={`block text-xs tabular-nums ${
+                      isSelected
+                        ? 'text-slate-300 dark:text-slate-600'
+                        : 'text-slate-500 dark:text-slate-400'
+                    }`}
+                  >
                     {hasItems
-                      ? `${routine.exercises.length + routine.cardioExercises.length} items`
+                      ? routine.exercises.length + routine.cardioExercises.length
                       : '—'}
                   </span>
                 </button>
@@ -272,7 +263,7 @@ export default function RoutinesPage() {
                       type="button"
                       onClick={() => setExercises((prev) => prev.filter((_, i) => i !== index))}
                       aria-label={`Remove ${item.exercise.name}`}
-                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -296,7 +287,7 @@ export default function RoutinesPage() {
                         setCardioExercises((prev) => prev.filter((_, i) => i !== index))
                       }
                       aria-label={`Remove ${item.equipment.name}`}
-                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

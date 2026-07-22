@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { Loader2 } from 'lucide-react';
@@ -156,7 +156,7 @@ export default function LogTraining() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="Log Training" subtitle="Session, exercises, and effort" backTo="/" />
+      <PageHeader title="Log Training" subtitle="Session, exercises, and effort" backTo="/log" />
 
       <div className="mb-4 grid grid-cols-2 gap-3">
         <div>
@@ -200,7 +200,7 @@ export default function LogTraining() {
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <span className="text-sm font-semibold">{exercise.name}</span>
                 <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
-                  target {exercise.sets} × {exercise.reps}
+                  target {exercise.sets} Ã— {exercise.reps}
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-2">
@@ -259,7 +259,7 @@ export default function LogTraining() {
                     onChange={(e) => updateEntry(index, 'rir', e.target.value)}
                     className="field px-2 py-2 text-sm"
                   >
-                    <option value="">—</option>
+                    <option value="">â€”</option>
                     {RIR_OPTIONS.map((v) => (
                       <option key={v} value={v}>
                         {v}
@@ -322,13 +322,13 @@ export default function LogTraining() {
           />
           <ToggleRow
             label="Barbell squat done"
-            description="Not in the program — flagged as knee risk"
+            description="Not in the program â€” flagged as knee risk"
             checked={squatDone}
             onChange={setSquatDone}
           />
           <ToggleRow
             label="Barbell OHP done"
-            description="Not in the program — flagged as shoulder risk"
+            description="Not in the program â€” flagged as shoulder risk"
             checked={ohpDone}
             onChange={setOhpDone}
           />

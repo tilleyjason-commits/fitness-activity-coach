@@ -10,6 +10,19 @@ function renderSelector() {
   return { onAdd, onAddCardio };
 }
 
+describe('ExerciseSelector selection color role', () => {
+  // Selection is not success: chips use the neutral filled treatment so
+  // "selected" never reads as "complete" (emerald stays for actions/pass).
+  it('marks the selected muscle-group chip with the neutral fill, not emerald', () => {
+    renderSelector();
+    const chips = screen.getAllByRole('tab');
+    const selected = chips.find((chip) => chip.getAttribute('aria-selected') === 'true');
+    expect(selected).toBeDefined();
+    expect(selected?.className).not.toMatch(/emerald/);
+    expect(selected?.className).toMatch(/chip-selected/);
+  });
+});
+
 describe('ExerciseSelector commercial-gym catalog', () => {
   it('does not dump the full catalog until the user filters', () => {
     renderSelector();

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
@@ -43,7 +43,7 @@ export default function LogSubjective() {
       <PageHeader
         title="How are you feeling?"
         subtitle={format(new Date(), 'EEEE, MMMM d')}
-        backTo="/"
+        backTo="/log"
       />
 
       <div className="card mb-4 space-y-5">
@@ -79,7 +79,7 @@ export default function LogSubjective() {
           rows={4}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Anything worth remembering about today…"
+          placeholder="Anything worth remembering about todayâ€¦"
           className="field resize-none"
         />
       </div>

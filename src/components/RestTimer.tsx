@@ -18,6 +18,42 @@ function fmt(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+/**
+ * Rest is over: buzz the phone and try a short beep. Both are best-effort —
+ * a face-down phone in a gym must never crash the timer because an alert
+ * channel is unsupported or blocked.
+ */
+function notifyRestFinished(): void {
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate([200, 100, 200]);
+    }
+  } catch {
+    // Vibration is an enhancement only.
+  }
+  try {
+    const AudioCtor =
+      window.AudioContext ??
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtor) return;
+    const ctx = new AudioCtor();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = 'sine';
+    oscillator.frequency.value = 880;
+    gain.gain.value = 0.08;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.35);
+    oscillator.onended = () => {
+      void ctx.close();
+    };
+  } catch {
+    // Audio may be blocked before a user gesture; the visual state still shows.
+  }
+}
+
 interface RestTimerProps {
   /** Bump to (re)start the countdown automatically after a set is logged. */
   autoStartKey?: number;
@@ -26,7 +62,7 @@ interface RestTimerProps {
   onSaveDefault?: (seconds: number) => void;
 }
 
-/** Bottom-sheet rest countdown between sets: ready → running → finished (auto-dismiss). */
+/** Bottom-sheet rest countdown between sets: ready → running → finished (stays until closed). */
 export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDefault }: RestTimerProps) {
   const [timer, setTimer] = useState(() => createTimer(initialSeconds));
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -55,19 +91,15 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
     return () => window.clearInterval(id);
   }, [running]);
 
+  // The finished state stays on screen until the user closes the sheet or
+  // logs the next set (autoStartKey restarts the countdown) — no auto-dismiss.
   useEffect(() => {
     if (running && isFinished(timer, nowMs)) {
       setTimer((current) => pauseTimer(current, nowMs));
       setFinished(true);
+      notifyRestFinished();
     }
   }, [nowMs, running, timer]);
-
-  // Finished state auto-dismisses after 3 seconds.
-  useEffect(() => {
-    if (!finished || !onClose) return;
-    const id = window.setTimeout(onClose, 3000);
-    return () => window.clearTimeout(id);
-  }, [finished, onClose]);
 
   function applyPreset(seconds: number) {
     const now = Date.now();
@@ -95,7 +127,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
               type="button"
               onClick={onClose}
               aria-label="Close rest timer"
-              className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
+              className="-m-2 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
             >
               <X className="h-4 w-4" />
             </button>
@@ -116,9 +148,13 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
           >
             <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white dark:bg-slate-800">
               {finished ? (
-                <span className="flex animate-pulse flex-col items-center text-emerald-500">
-                  <Check className="h-6 w-6" />
-                  <span className="text-xs font-semibold">Done!</span>
+                <span
+                  role="status"
+                  aria-live="assertive"
+                  className="flex animate-pulse flex-col items-center text-emerald-500"
+                >
+                  <Check className="h-6 w-6" aria-hidden />
+                  <span className="text-xs font-semibold">Rest complete</span>
                 </span>
               ) : (
                 <span className="text-2xl font-bold tabular-nums">{fmt(secondsLeft)}</span>
@@ -137,7 +173,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
               key={preset}
               type="button"
               onClick={() => applyPreset(preset)}
-              className="rounded-full bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+              className="min-h-11 rounded-full bg-slate-200 px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
             >
               {preset < 60 ? `${preset}s` : `${preset / 60}m`}
             </button>
@@ -153,7 +189,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
                 setNowMs(now);
                 setTimer((current) => pauseTimer(current, now));
               }}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-amber-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-600"
+              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-amber-500 text-sm font-semibold text-white transition-colors hover:bg-amber-600"
             >
               <Pause className="h-4 w-4" />
               Pause
@@ -168,7 +204,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
                 setTimer((current) => startTimer(current, now));
               }}
               disabled={secondsLeft === 0}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Play className="h-4 w-4" />
               Start
@@ -181,7 +217,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
               setNowMs(Date.now());
               setFinished(false);
             }}
-            className="flex items-center justify-center gap-2 rounded-xl bg-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+            className="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-xl bg-slate-200 px-4 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
             aria-label="Reset timer"
           >
             <RotateCcw className="h-4 w-4" />
@@ -193,7 +229,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
                 onSaveDefault(totalSeconds);
                 setSaveMessage('Saved');
               }}
-              className="rounded-xl bg-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+              className="min-h-11 rounded-xl bg-slate-200 px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
             >
               {saveMessage || 'Save default'}
             </button>

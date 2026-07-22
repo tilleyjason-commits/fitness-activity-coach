@@ -65,11 +65,11 @@ export function RecommendationCard({ severity, message, domain, onDismiss }: Rec
       <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${style.iconColor}`} aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2">
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${style.badge}`}>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${style.badge}`}>
             {style.label}
           </span>
           {domain && (
-            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+            <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
               {domain}
             </span>
           )}
@@ -81,7 +81,7 @@ export function RecommendationCard({ severity, message, domain, onDismiss }: Rec
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss recommendation"
-          className="-m-1 rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+          className="-m-2.5 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
         >
           <X className="h-4 w-4" />
         </button>

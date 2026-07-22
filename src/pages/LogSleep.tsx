@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Loader2, Star } from 'lucide-react';
@@ -52,7 +52,7 @@ export default function LogSleep() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="Log Sleep" subtitle={format(new Date(), 'EEEE, MMMM d')} backTo="/" />
+      <PageHeader title="Log Sleep" subtitle={format(new Date(), 'EEEE, MMMM d')} backTo="/log" />
 
       <section className="mb-4" aria-label="Sleep times">
         <h2 className="section-title">Times</h2>
@@ -68,7 +68,7 @@ export default function LogSleep() {
               onChange={(e) => setBedtime(e.target.value)}
               className="field"
             />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               target ~{MEAL_TIMING.bedtime}
             </p>
           </div>
@@ -83,7 +83,7 @@ export default function LogSleep() {
               onChange={(e) => setWaketime(e.target.value)}
               className="field"
             />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               target ~{MEAL_TIMING.waketime}
             </p>
           </div>
@@ -102,7 +102,7 @@ export default function LogSleep() {
                 type="button"
                 role="radio"
                 aria-checked={quality === step}
-                aria-label={`${step} of 5 — ${qualityLabel}`}
+                aria-label={`${step} of 5 â€” ${qualityLabel}`}
                 onClick={() => setQuality(step)}
                 className="rounded-lg p-1.5 transition-transform active:scale-90"
               >
@@ -142,7 +142,7 @@ export default function LogSleep() {
               onChange={(e) => setLastCaffeine(e.target.value)}
               className="field"
             />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               cutoff {MEAL_TIMING.caffeineCutoff}
             </p>
           </div>
@@ -157,7 +157,7 @@ export default function LogSleep() {
               onChange={(e) => setLastScreen(e.target.value)}
               className="field"
             />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               screens off before bed
             </p>
           </div>

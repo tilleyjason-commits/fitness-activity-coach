@@ -44,7 +44,7 @@ test.describe('authenticated disposable-account smoke', () => {
 
       await page.getByRole('link', { name: 'Workout', exact: true }).click();
       await expect(page).toHaveURL(/#\/training/);
-      await expect(page.getByRole('heading', { name: 'Training' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Workout' })).toBeVisible();
 
       await page.goto('./#/routines');
       await expect(page.getByRole('heading', { name: 'Routines' })).toBeVisible();
@@ -397,14 +397,19 @@ test.describe('authenticated meal-slot smoke', () => {
     const apiB = createClient(supabaseUrl!, supabaseAnonKey!, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    // Deterministic far-future date: never a real logging day, always the same
-    // row, pre-cleaned below so reruns start from nothing.
-    const smokeDate = '2081-06-15';
+    // Deterministic far-past date: never a current logging day, always the same
+    // row, pre-cleaned below so reruns start from nothing. A past date also
+    // respects the meal pager's intentional no-future-logging guard.
+    const smokeDate = '2001-06-15';
 
     async function fillMealCard(
       card: import('@playwright/test').Locator,
       food: { name: string; cal: string; p: string; c: string; f: string },
     ): Promise<void> {
+      // Empty meal slots are intentionally compact after the design pass.
+      // Expand the slot before exercising its manual-entry workflow.
+      const compactAdd = card.getByRole('button', { name: /^Add (?!food manually)/i });
+      if (await compactAdd.isVisible().catch(() => false)) await compactAdd.click();
       await card.getByRole('button', { name: /add food manually/i }).click();
       await card.getByLabel('Food name').fill(food.name);
       await card.getByLabel('Cal', { exact: true }).fill(food.cal);
@@ -440,7 +445,7 @@ test.describe('authenticated meal-slot smoke', () => {
       // --- UI as user A: manual entry into both new slots (no AI provider).
       await signInThroughUi(page);
       await page.goto('./#/macros');
-      await expect(page.getByRole('heading', { name: "Today's Meals" })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Meals · / })).toBeVisible();
       await page.getByLabel('Date').fill(smokeDate);
 
       const preCard = page.getByRole('region', { name: 'Pre-Workout Snack' });
@@ -458,7 +463,7 @@ test.describe('authenticated meal-slot smoke', () => {
 
       // --- Persistence: reload, reselect the date, verify each card.
       await page.reload();
-      await expect(page.getByRole('heading', { name: "Today's Meals" })).toBeVisible();
+      await expect(page.getByRole('heading', { name: /^Meals · / })).toBeVisible();
       await page.getByLabel('Date').fill(smokeDate);
       const preCardAfter = page.getByRole('region', { name: 'Pre-Workout Snack' });
       await expect(preCardAfter.getByText('Banana')).toBeVisible({ timeout: 15_000 });
@@ -561,7 +566,7 @@ test.describe('authenticated commercial-gym catalog smoke', () => {
 
       await signInThroughUi(page, smokeUserBEmail!, smokeUserBPassword!);
       await page.goto('./#/training');
-      await expect(page.getByRole('heading', { name: 'Training' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Workout' })).toBeVisible();
 
       await page.getByRole('button', { name: 'Start Blank Workout' }).click();
 

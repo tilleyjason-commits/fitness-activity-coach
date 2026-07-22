@@ -1,6 +1,6 @@
-interface EmojiScaleProps {
+﻿interface EmojiScaleProps {
   label: string;
-  /** One emoji per step, low → high (length defines the scale, normally 5). */
+  /** One emoji per step, low â†’ high (length defines the scale, normally 5). */
   emojis: string[];
   /** Current 1-based value, or null when unanswered. */
   value: number | null;
@@ -9,7 +9,7 @@ interface EmojiScaleProps {
   captions?: [string, string];
 }
 
-/** 1–5 tap selector with emojis, thumb-sized targets for a 390px screen. */
+/** 1â€“5 tap selector with emojis, thumb-sized targets for a 390px screen. */
 export function EmojiScale({ label, emojis, value, onChange, captions }: EmojiScaleProps) {
   return (
     <fieldset>
@@ -38,7 +38,7 @@ export function EmojiScale({ label, emojis, value, onChange, captions }: EmojiSc
         })}
       </div>
       {captions && (
-        <div className="mt-1 flex justify-between text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="mt-1 flex justify-between text-xs text-slate-500 dark:text-slate-400">
           <span>{captions[0]}</span>
           <span>{captions[1]}</span>
         </div>

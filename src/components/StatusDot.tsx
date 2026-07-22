@@ -1,10 +1,6 @@
-export type DotStatus = 'pass' | 'fail' | 'pending';
+import { Check, X } from 'lucide-react';
 
-const DOT_CLASSES: Record<DotStatus, string> = {
-  pass: 'bg-emerald-500',
-  fail: 'bg-red-500',
-  pending: 'bg-slate-300 dark:bg-slate-600',
-};
+export type DotStatus = 'pass' | 'fail' | 'pending';
 
 const STATUS_TEXT: Record<DotStatus, string> = {
   pass: 'done',
@@ -18,22 +14,43 @@ interface StatusDotProps {
   label?: string;
 }
 
-/** Green (done/passed), red (failed), gray (not yet logged) compliance dot. */
+/**
+ * Compliance status with shape redundancy so it survives color blindness:
+ * pass = filled green check, fail = filled red ×, pending = hollow gray ring.
+ */
 export function StatusDot({ status, label }: StatusDotProps) {
-  const dot = (
-    <span
-      className={`inline-block h-3.5 w-3.5 shrink-0 rounded-full ${DOT_CLASSES[status]}`}
-      role="img"
-      aria-label={label ? `${label}: ${STATUS_TEXT[status]}` : STATUS_TEXT[status]}
-    />
-  );
+  const ariaLabel = label ? `${label}: ${STATUS_TEXT[status]}` : STATUS_TEXT[status];
+  const dot =
+    status === 'pass' ? (
+      <span
+        role="img"
+        aria-label={ariaLabel}
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+      >
+        <Check className="h-3 w-3" strokeWidth={3} aria-hidden />
+      </span>
+    ) : status === 'fail' ? (
+      <span
+        role="img"
+        aria-label={ariaLabel}
+        className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-white"
+      >
+        <X className="h-3 w-3" strokeWidth={3} aria-hidden />
+      </span>
+    ) : (
+      <span
+        role="img"
+        aria-label={ariaLabel}
+        className="inline-block h-4 w-4 shrink-0 rounded-full border-2 border-slate-300 dark:border-slate-600"
+      />
+    );
 
   if (!label) return dot;
 
   return (
     <div className="flex flex-col items-center gap-1.5">
       {dot}
-      <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
     </div>
   );
 }

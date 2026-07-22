@@ -55,6 +55,48 @@ async function fillWizardToFinish() {
   return user;
 }
 
+describe('SetupWizard training_time mapping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // The wizard's coarse choice must save a representative HH:MM — Settings
+  // and resolveMealTiming treat training_time as a time, and 'Morning' used
+  // to corrupt both ("Morni" in the time input, broken meal-slot hints).
+  it.each([
+    ['Morning', '07:00'],
+    ['Midday', '11:00'],
+    ['Afternoon', '15:00'],
+    ['Evening', '18:00'],
+  ])('saves %s as %s', async (choice, expected) => {
+    upsertProfileMock.mockResolvedValue({ id: 'user-abc', user_id: 'user-abc' });
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter
+        initialEntries={['/setup']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <SetupWizard />
+      </MemoryRouter>,
+    );
+
+    await user.type(screen.getByLabelText(/age/i), '40');
+    await user.type(screen.getByLabelText(/height/i), '180');
+    await user.selectOptions(screen.getByLabelText(/i usually train/i), choice);
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+    await user.type(screen.getByLabelText(/current weight/i), '210');
+    await user.type(screen.getByLabelText(/body fat/i), '24');
+    await user.click(screen.getByRole('button', { name: /continue/i }));
+
+    // The summary keeps the human label, not the raw time.
+    expect(screen.getByText(choice)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /let'?s go/i }));
+    const payload = upsertProfileMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.training_time).toBe(expected);
+  });
+});
+
 describe('SetupWizard save behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();

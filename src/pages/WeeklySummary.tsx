@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { addDays, format, startOfWeek, subDays } from 'date-fns';
-import { CheckCircle2, Target } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Target } from 'lucide-react';
 import {
   Bar,
   BarChart,
@@ -33,6 +34,7 @@ import { CHART } from '~/lib/constants';
 import { SEVERITY_ORDER, type DailyLog, type Recommendation } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { RecommendationCard } from '~/components/RecommendationCard';
+import { useIsDark } from '~/hooks/useIsDark';
 
 const WEAKEST_BAR_COLOR = '#f59e0b'; // amber-500 — flags the weakest domain
 
@@ -58,6 +60,7 @@ function activeWeekRecs(recs: Recommendation[]): Recommendation[] {
 
 export default function WeeklySummary() {
   const { user } = useAuth();
+  const isDark = useIsDark();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [weekLogs, setWeekLogs] = useState<DailyLog[]>([]);
@@ -66,7 +69,9 @@ export default function WeeklySummary() {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [weighIns, setWeighIns] = useState<DailyLog[]>([]);
 
-  const weekStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+  // 0 = the current Monday–Sunday window; positive values page back in time.
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekStartDate = subDays(startOfWeek(new Date(), { weekStartsOn: 1 }), weekOffset * 7);
   const weekStart = format(weekStartDate, 'yyyy-MM-dd');
   const weekEnd = format(addDays(weekStartDate, 6), 'yyyy-MM-dd');
 
@@ -181,7 +186,6 @@ export default function WeeklySummary() {
     }
   }
 
-  const isDark = document.documentElement.classList.contains('dark');
   const tooltipStyle = {
     background: isDark ? '#0f172a' : '#ffffff',
     border: `1px solid ${isDark ? CHART.gridDark : CHART.gridLight}`,
@@ -189,12 +193,43 @@ export default function WeeklySummary() {
     fontSize: 12,
   };
 
+  const weekPager = (
+    <div className="mb-4 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700/60 dark:bg-slate-800">
+      <button
+        type="button"
+        onClick={() => setWeekOffset((offset) => offset + 1)}
+        aria-label="Previous week"
+        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      >
+        <ChevronLeft className="h-5 w-5" />
+      </button>
+      <span className="text-sm font-semibold tabular-nums">
+        {format(weekStartDate, 'MMM d')} – {format(addDays(weekStartDate, 6), 'MMM d')}
+        {weekOffset === 0 && (
+          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500 dark:bg-slate-700 dark:text-slate-300">
+            This week
+          </span>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={() => setWeekOffset((offset) => Math.max(0, offset - 1))}
+        disabled={weekOffset === 0}
+        aria-label="Next week"
+        className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-400 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+      >
+        <ChevronRight className="h-5 w-5" />
+      </button>
+    </div>
+  );
+
   if (loading) {
     return (
       <div>
-        <PageHeader title="Weekly Summary" backTo="/" />
+        <PageHeader title="Progress" />
+        {weekPager}
         <div className="card animate-pulse text-sm text-slate-500 dark:text-slate-400">
-          Crunching this week&apos;s numbers…
+          Crunching the week&apos;s numbers…
         </div>
       </div>
     );
@@ -202,17 +237,31 @@ export default function WeeklySummary() {
 
   return (
     <div>
-      <PageHeader
-        title="Weekly Summary"
-        subtitle={`${format(weekStartDate, 'MMM d')} – ${format(addDays(weekStartDate, 6), 'MMM d')}`}
-        backTo="/"
-      />
+      <PageHeader title="Progress" />
+      {weekPager}
 
       {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
 
       {weekLogs.length === 0 ? (
-        <div className="card text-sm text-slate-600 dark:text-slate-300">
-          Nothing logged this week yet. Compliance and trends appear once you log a day.
+        <div className="card mb-4 text-sm text-slate-600 dark:text-slate-300">
+          <p className="mb-3">
+            Nothing logged {weekOffset === 0 ? 'this week yet' : 'that week'}. Compliance and
+            trends appear once a day is logged.
+          </p>
+          <div className="flex gap-2">
+            <Link
+              to="/macros"
+              className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-emerald-600"
+            >
+              Log a meal
+            </Link>
+            <Link
+              to="/training"
+              className="flex-1 rounded-xl border border-slate-300 py-2.5 text-center text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              Log training
+            </Link>
+          </div>
         </div>
       ) : (
         <>
@@ -281,7 +330,7 @@ export default function WeeklySummary() {
                 <Target className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" aria-hidden />
               )}
               <div className="min-w-0">
-                <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                <p className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Top priority
                 </p>
                 <p className="text-sm leading-snug text-slate-700 dark:text-slate-200">{priority}</p>
@@ -316,32 +365,9 @@ export default function WeeklySummary() {
         </>
       )}
 
-      <section className="mb-4" aria-label="This week's recommendations">
-        <h2 className="section-title">Recommendations</h2>
-        {recs.length === 0 ? (
-          <div className="card flex items-center gap-3">
-            <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" aria-hidden />
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              No open recommendations this week.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {recs.map((rec) => (
-              <RecommendationCard
-                key={rec.id}
-                severity={rec.severity}
-                message={rec.message}
-                domain={getRuleById(rec.rule_id)?.domain}
-                onDismiss={() => void handleDismiss(rec.id)}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
+      {/* Body composition reads as one block: change vs last week, then trend. */}
       {weightTrend.length >= 2 && (
-        <section className="card" aria-label="Weight trend">
+        <section className="card mb-4" aria-label="Weight trend">
           <h2 className="section-title">Weight trend</h2>
           <div className="h-36">
             <ResponsiveContainer width="100%" height="100%">
@@ -387,6 +413,31 @@ export default function WeeklySummary() {
           )}
         </section>
       )}
+
+      <section className="mb-4" aria-label="This week's recommendations">
+        <h2 className="section-title">Recommendations</h2>
+        {recs.length === 0 ? (
+          <div className="card flex items-center gap-3">
+            <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" aria-hidden />
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              No open recommendations this week.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {recs.map((rec) => (
+              <RecommendationCard
+                key={rec.id}
+                severity={rec.severity}
+                message={rec.message}
+                domain={getRuleById(rec.rule_id)?.domain}
+                onDismiss={() => void handleDismiss(rec.id)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
     </div>
   );
 }

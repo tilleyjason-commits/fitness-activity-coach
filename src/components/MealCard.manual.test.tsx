@@ -45,18 +45,22 @@ describe('MealCard Bedtime Snack slot', () => {
     );
   }
 
-  it('renders an accessible Bedtime Snack section defaulting to 20:00 with the approved hint', () => {
+  it('renders an accessible Bedtime Snack section defaulting to 20:00 with the approved hint', async () => {
+    const user = userEvent.setup();
     renderBedtimeCard();
 
     expect(screen.getByRole('region', { name: 'Bedtime Snack' })).toBeInTheDocument();
-    expect(screen.getByLabelText('Bedtime Snack time')).toHaveValue('20:00');
+    // The empty slot is a compact row; the hint shows there, the full editor after a tap.
     expect(screen.getByText('Pre-sleep protein / casein (~20:00)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add Bedtime Snack' }));
+    expect(screen.getByLabelText('Bedtime Snack time')).toHaveValue('20:00');
   });
 
   it('supports manual food entry and save without ever invoking the AI', async () => {
     const user = userEvent.setup();
     renderBedtimeCard();
 
+    await user.click(screen.getByRole('button', { name: 'Add Bedtime Snack' }));
     await user.click(screen.getByRole('button', { name: /add food manually/i }));
     await user.type(screen.getByLabelText(/food name/i), 'Casein shake');
     await user.type(screen.getByLabelText(/^cal$/i), '120');
@@ -85,6 +89,7 @@ describe('MealCard manual entry when AI is unavailable', () => {
     const user = userEvent.setup();
     renderCard();
 
+    await user.click(screen.getByRole('button', { name: 'Add Lunch' }));
     await user.click(screen.getByRole('button', { name: /add food manually/i }));
 
     await user.type(screen.getByLabelText(/food name/i), 'Turkey sandwich');
@@ -108,6 +113,7 @@ describe('MealCard manual entry when AI is unavailable', () => {
     onCalculate.mockRejectedValue(new Error('The AI provider is temporarily unavailable.'));
     renderCard();
 
+    await user.click(screen.getByRole('button', { name: 'Add Lunch' }));
     await user.type(screen.getByLabelText(/lunch description/i), 'chicken wrap and an apple');
     await user.click(screen.getByRole('button', { name: /calculate with ai/i }));
 
@@ -149,6 +155,7 @@ describe('MealCard manual entry when AI is unavailable', () => {
     onCalculate.mockResolvedValueOnce(firstResult);
     renderCard();
 
+    await user.click(screen.getByRole('button', { name: 'Add Lunch' }));
     await user.type(screen.getByLabelText(/lunch description/i), 'an apple');
     await user.click(screen.getByRole('button', { name: /calculate with ai/i }));
     expect(await screen.findByDisplayValue('Apple')).toBeInTheDocument();
@@ -186,10 +193,12 @@ describe('MealCard manual entry when AI is unavailable', () => {
     onCalculate.mockResolvedValueOnce(fallbackResult);
     renderCard();
 
+    await user.click(screen.getByRole('button', { name: 'Add Lunch' }));
     await user.type(screen.getByLabelText(/lunch description/i), 'one banana');
     await user.click(screen.getByRole('button', { name: /calculate with ai/i }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(/Fallback model active/i);
+    // User-facing copy first; vendor detail stays available in the disclosure.
+    expect(await screen.findByRole('status')).toHaveTextContent(/Backup AI estimated these macros/i);
     expect(screen.getByRole('status')).toHaveTextContent(/deepseek-chat/i);
     expect(screen.getByDisplayValue('Banana')).toBeInTheDocument();
   });

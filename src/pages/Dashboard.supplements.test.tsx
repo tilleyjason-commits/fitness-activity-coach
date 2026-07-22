@@ -50,6 +50,14 @@ vi.mock('~/lib/db', () => ({
   dismissRecommendation: (...a: unknown[]) => db.dismissRecommendation(...a),
 }));
 
+// Today's-workout data is exercised in Dashboard.today.test.tsx; here it just
+// needs to resolve so the page settles without touching the network.
+vi.mock('~/lib/workout-repo', () => ({
+  getActiveWorkout: () => Promise.resolve(null),
+  getWeeklyRoutines: () => Promise.resolve({}),
+  hasCompletedWorkout: () => Promise.resolve(false),
+}));
+
 function makeLog(overrides: Partial<DailyLog> = {}): DailyLog {
   return {
     id: 'log-1',
@@ -186,16 +194,27 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('supplements quick action', () => {
-  it('adds a Log Supplements quick action beside the existing three', () => {
+describe('quick actions', () => {
+  it('routes Log Meal to the canonical meal tracker, with sleep/supplements/weight beside it', () => {
     renderDashboard();
-    expect(screen.getByRole('link', { name: /Log Supplements/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Log Meal/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/macros'),
+    );
+    expect(screen.getByRole('link', { name: /Log Supplements/i })).toHaveAttribute(
       'href',
       expect.stringContaining('/log/supplements'),
     );
-    expect(screen.getByRole('link', { name: /Log Workout/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Log Nutrition/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Log Sleep/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Log Sleep/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/log/sleep'),
+    );
+    expect(screen.getByRole('link', { name: /Log Weight/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('/log/weight'),
+    );
+    // No competing nutrition entry from Home — backfill lives in the Log hub.
+    expect(screen.queryByRole('link', { name: /Log Nutrition/i })).not.toBeInTheDocument();
   });
 });
 
@@ -220,7 +239,7 @@ describe('conditional Creatine compliance dot', () => {
     renderDashboard();
 
     expect(screen.getByRole('img', { name: /^Train:/ })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /^Casein:/ })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /^PM Protein:/ })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /^Creatine:/ })).not.toBeInTheDocument();
   });
 

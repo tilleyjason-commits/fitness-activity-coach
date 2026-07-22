@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import MacroTrackerPage from '~/pages/MacroTrackerPage';
 import type { DailyLog, MealFood, MealLog } from '~/lib/types';
 
@@ -96,7 +97,14 @@ describe('MacroTrackerPage slot rendering', () => {
   });
 
   it('renders seven meal cards in the exact approved DOM order', async () => {
-    render(<MacroTrackerPage />);
+    render(
+      <MemoryRouter
+        initialEntries={['/macros']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <MacroTrackerPage />
+      </MemoryRouter>,
+    );
 
     const cards = await mealCardRegions();
     expect(cards.map((el) => el.getAttribute('aria-label'))).toEqual(APPROVED_LABEL_ORDER);
@@ -112,7 +120,14 @@ describe('MacroTrackerPage slot rendering', () => {
       mealFood('f-2', 'm-bed', 'Casein shake', 120),
     ]);
 
-    render(<MacroTrackerPage />);
+    render(
+      <MemoryRouter
+        initialEntries={['/macros']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <MacroTrackerPage />
+      </MemoryRouter>,
+    );
     await mealCardRegions();
 
     const preCard = screen.getByRole('region', { name: 'Pre-Workout Snack' });
@@ -134,7 +149,14 @@ describe('MacroTrackerPage slot rendering', () => {
       mealLog('m-bed', 'bedtime_snack', 120, 24, 3, 1),
     ]);
 
-    render(<MacroTrackerPage />);
+    render(
+      <MemoryRouter
+        initialEntries={['/macros']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <MacroTrackerPage />
+      </MemoryRouter>,
+    );
     const summary = await screen.findByRole('region', { name: 'Daily total' });
 
     expect(within(summary).getByText('225')).toBeInTheDocument();
@@ -147,16 +169,23 @@ describe('MacroTrackerPage slot rendering', () => {
     getMealLogsMock.mockResolvedValue([mealLog('m-old', 'breakfast', 400, 30, 40, 10)]);
     getMealFoodsMock.mockResolvedValue([mealFood('f-old', 'm-old', 'Oatmeal', 400)]);
 
-    render(<MacroTrackerPage />);
+    render(
+      <MemoryRouter
+        initialEntries={['/macros']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <MacroTrackerPage />
+      </MemoryRouter>,
+    );
 
     const cards = await mealCardRegions();
     expect(cards.map((el) => el.getAttribute('aria-label'))).toEqual(APPROVED_LABEL_ORDER);
 
-    // New slots stay empty and interactive (idle state offers manual entry).
+    // New slots stay empty and interactive (compact rows expand to the editor).
     for (const name of ['Pre-Workout Snack', 'Bedtime Snack']) {
       const card = screen.getByRole('region', { name });
       expect(
-        within(card).getByRole('button', { name: /add food manually/i }),
+        within(card).getByRole('button', { name: `Add ${name}` }),
       ).toBeInTheDocument();
     }
     expect(screen.queryByRole('alert')).toBeNull();

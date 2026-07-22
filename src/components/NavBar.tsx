@@ -28,14 +28,15 @@ const NAV_ITEMS: NavItem[] = [
     to: '/log',
     label: 'Log',
     icon: ClipboardList,
-    isActive: (p) => p === '/log' || p.startsWith('/log/'),
+    // The meal tracker is the Log tab's flagship surface, not a More tool.
+    isActive: (p) => p === '/log' || p.startsWith('/log/') || p === '/macros',
   },
   { to: '/weekly', label: 'Progress', icon: BarChart3, isActive: (p) => p === '/weekly' },
   {
     to: '/settings',
     label: 'More',
     icon: MoreHorizontal,
-    isActive: (p) => p === '/settings' || p.startsWith('/settings/') || p === '/macros',
+    isActive: (p) => p === '/settings' || p.startsWith('/settings/'),
   },
 ];
 
@@ -56,7 +57,7 @@ export function NavBar() {
               key={to}
               to={to}
               aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+              className={`flex flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors ${
                 active
                   ? 'text-emerald-600 dark:text-emerald-400'
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'

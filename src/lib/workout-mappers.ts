@@ -106,8 +106,8 @@ export const WEEKDAYS: Weekday[] = [
   'Sunday',
 ];
 
-/** The five training days shown on the Routines page. */
-export const TRAINING_DAYS: Weekday[] = WEEKDAYS.slice(0, 5);
+/** All seven days are presettable — weekend athletes get auto-populate too. */
+export const TRAINING_DAYS: Weekday[] = WEEKDAYS;
 
 export function getTodayWeekday(date = new Date()): Weekday {
   const day = date.getDay();

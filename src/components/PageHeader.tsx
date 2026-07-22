@@ -16,7 +16,7 @@ export function PageHeader({ title, subtitle, backTo }: PageHeaderProps) {
         <Link
           to={backTo}
           aria-label="Back"
-          className="-ml-1 rounded-xl p-2 text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          className="-ml-2 flex min-h-11 min-w-11 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>

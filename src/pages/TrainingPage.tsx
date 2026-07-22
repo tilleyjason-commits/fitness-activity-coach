@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createAutosaveController, type AutosaveController, type AutosaveState } from '~/lib/autosave';
 import { SaveStatus } from '~/components/SaveStatus';
 import type { WorkoutState as WorkoutStateType } from '~/lib/types';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { CheckCircle2, Loader2, Play, RefreshCw } from 'lucide-react';
+import { CheckCircle2, Loader2, Play, Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { PageHeader } from '~/components/PageHeader';
+import { TrainingTabs } from '~/components/TrainingTabs';
 import { ExerciseSelector } from '~/components/ExerciseSelector';
 import { WorkoutTracker } from '~/components/WorkoutTracker';
 import { WorkoutHistory } from '~/components/WorkoutHistory';
@@ -45,38 +46,6 @@ import type {
 
 type TrainingMode = 'workout' | 'history';
 
-/** [Workout] [History] [Routines] segment control; Routines lives on its own route. */
-function ModeTabs({ mode, onSelect }: { mode: TrainingMode; onSelect: (m: TrainingMode) => void }) {
-  const base = 'rounded-lg py-2 text-center text-sm font-medium transition-colors';
-  const active = 'bg-emerald-500 text-white';
-  const inactive =
-    'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200';
-
-  return (
-    <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700/60 dark:bg-slate-800">
-      <button
-        type="button"
-        onClick={() => onSelect('workout')}
-        className={`${base} ${mode === 'workout' ? active : inactive}`}
-        aria-pressed={mode === 'workout'}
-      >
-        Workout
-      </button>
-      <button
-        type="button"
-        onClick={() => onSelect('history')}
-        className={`${base} ${mode === 'history' ? active : inactive}`}
-        aria-pressed={mode === 'history'}
-      >
-        History
-      </button>
-      <Link to="/routines" className={`${base} ${inactive}`}>
-        Routines
-      </Link>
-    </div>
-  );
-}
-
 function LoadingSkeleton() {
   return (
     <div className="space-y-3" aria-label="Loading workout">
@@ -112,6 +81,10 @@ export default function TrainingPage() {
   const [restDefaultSeconds, setRestDefaultSeconds] = useState(90);
   const [showRestTimer, setShowRestTimer] = useState(false);
   const [restTimerKey, setRestTimerKey] = useState(0);
+
+  // Operate-mode layout: mid-session the exercise browser stays collapsed
+  // behind an "Add exercise" row; it is always expanded for an empty workout.
+  const [showSelector, setShowSelector] = useState(false);
 
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -228,6 +201,7 @@ export default function TrainingPage() {
   function startWorkout(routine?: DailyRoutine) {
     loadWorkoutRequestRef.current += 1;
     setSaveError(null);
+    setShowSelector(false);
     dirtyRef.current = true;
     setWorkout(
       routine
@@ -268,23 +242,6 @@ export default function TrainingPage() {
     [mutateWorkout],
   );
 
-  const toggleSet = useCallback(
-    (exIdx: number, setIdx: number) => {
-      mutateWorkout((current) => ({
-        ...current,
-        exercises: current.exercises.map((we, i) =>
-          i !== exIdx
-            ? we
-            : {
-                ...we,
-                sets: we.sets.map((s, j) => (j === setIdx ? { ...s, completed: !s.completed } : s)),
-              },
-        ),
-      }));
-    },
-    [mutateWorkout],
-  );
-
   const removeExercise = useCallback(
     (exIdx: number) => {
       mutateWorkout((current) => ({
@@ -320,6 +277,7 @@ export default function TrainingPage() {
       setCompletedToday(true);
       setConfirmFinish(false);
       setShowRestTimer(false);
+      setShowSelector(false);
       setMode('history');
       await loadHistory();
     } catch (e) {
@@ -343,8 +301,8 @@ export default function TrainingPage() {
 
   return (
     <div>
-      <PageHeader title="Training" subtitle="Log sets as you lift" />
-      <ModeTabs mode={mode} onSelect={setMode} />
+      <PageHeader title="Workout" subtitle="Log sets as you lift" />
+      <TrainingTabs active={mode} onSelect={setMode} />
 
       {mode === 'history' ? (
         <WorkoutHistory
@@ -427,29 +385,35 @@ export default function TrainingPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {totals && totals.totalSets > 0 && (
-            <div className="card flex items-center justify-between py-3">
-              <span className="text-sm font-semibold">
-                {totals.completedSets}/{totals.totalSets} sets
-                {totals.totalCardioMinutes > 0 && ` · ${totals.totalCardioMinutes} min cardio`}
-              </span>
-              <div
-                className="h-2 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
-                role="progressbar"
-                aria-valuenow={totals.completedSets}
-                aria-valuemin={0}
-                aria-valuemax={totals.totalSets}
-                aria-label="Completed sets"
-              >
+          {/* Sticky operate header: session progress + save state stay visible
+              while scrolling through the tracker mid-set. */}
+          <section
+            aria-label="Session progress"
+            className="sticky top-0 z-10 -mx-4 space-y-2 bg-slate-100/95 px-4 py-2 backdrop-blur dark:bg-slate-900/95"
+          >
+            {totals && totals.totalSets > 0 && (
+              <div className="card flex items-center justify-between py-3">
+                <span className="text-sm font-semibold">
+                  {totals.completedSets}/{totals.totalSets} sets
+                  {totals.totalCardioMinutes > 0 && ` · ${totals.totalCardioMinutes} min cardio`}
+                </span>
                 <div
-                  className="h-full bg-emerald-500 transition-all"
-                  style={{ width: `${(totals.completedSets / totals.totalSets) * 100}%` }}
-                />
+                  className="h-2 w-24 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+                  role="progressbar"
+                  aria-valuenow={totals.completedSets}
+                  aria-valuemin={0}
+                  aria-valuemax={totals.totalSets}
+                  aria-label="Completed sets"
+                >
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${(totals.completedSets / totals.totalSets) * 100}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          )}
-
-          <SaveStatus state={autosaveState} onRetry={() => autosaveRef.current?.retry()} />
+            )}
+            <SaveStatus state={autosaveState} onRetry={() => autosaveRef.current?.retry()} />
+          </section>
 
           {saveError && (
             <p role="alert" className="text-sm text-red-500">
@@ -457,23 +421,34 @@ export default function TrainingPage() {
             </p>
           )}
 
-          <ExerciseSelector
-            onAdd={addExercise}
-            onAddCardio={addCardio}
-            addedIds={[
-              ...workout.exercises.map((we) => we.exercise.id),
-              ...workout.cardioExercises.map((ce) => ce.equipment.id),
-            ]}
-          />
-
           <WorkoutTracker
             exercises={workout.exercises}
             cardioExercises={workout.cardioExercises}
-            onToggleSet={toggleSet}
             onLogSet={logSet}
             onRemoveExercise={removeExercise}
             onRemoveCardioExercise={removeCardio}
           />
+
+          {hasItems && !showSelector ? (
+            <button
+              type="button"
+              onClick={() => setShowSelector(true)}
+              className="card flex min-h-11 w-full items-center justify-center gap-2 py-3 text-sm font-semibold text-slate-600 transition-colors hover:border-emerald-500/50 dark:text-slate-300"
+            >
+              <Plus className="h-4 w-4" aria-hidden />
+              Add exercise
+            </button>
+          ) : (
+            <ExerciseSelector
+              onAdd={addExercise}
+              onAddCardio={addCardio}
+              scrollableList={false}
+              addedIds={[
+                ...workout.exercises.map((we) => we.exercise.id),
+                ...workout.cardioExercises.map((ce) => ce.equipment.id),
+              ]}
+            />
+          )}
 
           {hasItems && (
             <button

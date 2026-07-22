@@ -140,6 +140,67 @@ describe('Routines page History tab link', () => {
   });
 });
 
+describe('active-workout operate layout', () => {
+  function activeWorkout() {
+    return {
+      date: '2026-07-22',
+      exercises: [
+        {
+          exercise: { id: 'bench-press', name: 'Bench Press', muscleGroup: 'Chest' },
+          targetSets: 2,
+          targetReps: 8,
+          targetWeight: 185,
+          sets: [
+            { reps: 8, weight: 185, rir: 2, completed: true },
+            { reps: 8, weight: 185, rir: null, completed: false },
+          ],
+        },
+      ],
+      cardioExercises: [],
+    };
+  }
+
+  it('titles the root page "Workout"', async () => {
+    renderTraining();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Workout' })).toBeInTheDocument();
+  });
+
+  it('orders a sticky progress header before the tracker, with add-exercise collapsed below', async () => {
+    repo.getActiveWorkout.mockResolvedValue(activeWorkout());
+    renderTraining();
+
+    const progress = await screen.findByRole('region', { name: 'Session progress' });
+    expect(progress.className).toMatch(/sticky/);
+
+    const trackerCard = screen.getByText('Bench Press');
+    const addRow = screen.getByRole('button', { name: /add exercise/i });
+
+    // DOM order: progress → tracker → collapsed add-exercise row.
+    expect(progress.compareDocumentPosition(trackerCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(trackerCard.compareDocumentPosition(addRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // The full selector stays collapsed until asked for.
+    expect(screen.queryByRole('region', { name: 'Add Exercise' })).not.toBeInTheDocument();
+  });
+
+  it('expands the exercise selector from the collapsed add-exercise row', async () => {
+    const user = userEvent.setup();
+    repo.getActiveWorkout.mockResolvedValue(activeWorkout());
+    renderTraining();
+
+    await user.click(await screen.findByRole('button', { name: /add exercise/i }));
+    expect(screen.getByRole('region', { name: 'Add Exercise' })).toBeVisible();
+  });
+
+  it('keeps the selector visible when the workout has no items yet', async () => {
+    const user = userEvent.setup();
+    renderTraining();
+
+    await user.click(await screen.findByRole('button', { name: 'Start Blank Workout' }));
+    expect(await screen.findByRole('region', { name: 'Add Exercise' })).toBeVisible();
+  });
+});
+
 describe('completed-routine same-day behavior', () => {
   it('does not silently auto-populate a new workout when today already has a completed one', async () => {
     repo.hasCompletedWorkout.mockResolvedValue(true);

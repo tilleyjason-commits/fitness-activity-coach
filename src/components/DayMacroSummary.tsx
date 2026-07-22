@@ -21,6 +21,7 @@ export function DayMacroSummary({
   targets = DEFAULT_TARGETS,
 }: DayMacroSummaryProps) {
   const pct = Math.min(100, Math.round((calories / targets.calories) * 100));
+  const proteinPct = Math.min(100, Math.round((protein / targets.proteinG) * 100));
   const status =
     calories > targets.caloriesMax
       ? { bar: 'bg-red-500', text: 'text-red-600 dark:text-red-400', label: 'over target' }
@@ -43,11 +44,33 @@ export function DayMacroSummary({
       <div className="mb-3 grid grid-cols-4 gap-2 text-center">
         {cells.map(({ label, value, target }) => (
           <div key={label}>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">{label}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
             <p className="text-base font-bold tabular-nums">{value}</p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">/ {target}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">/ {target}</p>
           </div>
         ))}
+      </div>
+      {/* Protein is the coaching priority — it gets its own bar, not just a cell. */}
+      <div className="mb-2">
+        <div className="mb-1 flex items-baseline justify-between">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Protein</span>
+          <span className="text-xs font-semibold tabular-nums">
+            {Math.round(protein)}g / {targets.proteinG}g
+          </span>
+        </div>
+        <div
+          className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+          role="progressbar"
+          aria-valuenow={proteinPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Protein vs target"
+        >
+          <div
+            className={`h-full transition-all ${proteinPct >= 100 ? 'bg-emerald-500' : 'bg-sky-500'}`}
+            style={{ width: `${proteinPct}%` }}
+          />
+        </div>
       </div>
       <div
         className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"

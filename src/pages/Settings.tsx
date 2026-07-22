@@ -103,7 +103,7 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader title="More" backTo="/" />
+      <PageHeader title="More" />
 
       <section className="card mb-4" aria-label="Account">
         <div className="mb-1 flex items-center gap-3">
@@ -132,15 +132,6 @@ export default function Settings() {
 
       <section className="mb-4" aria-label="Tools">
         <h2 className="section-title">Tools</h2>
-        <Link to="/macros" className="card mb-2 flex w-full items-center gap-3">
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium">Meals & macros</span>
-            <span className="block text-xs text-slate-500 dark:text-slate-400">
-              AI or manual meal logging
-            </span>
-          </span>
-          <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
-        </Link>
         <Link to="/routines" className="card mb-2 flex w-full items-center gap-3">
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-medium">Weekly routines</span>
@@ -169,7 +160,8 @@ export default function Settings() {
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           Targets, meal timing, and coaching rules use these values.
         </p>
-        <div className="card mb-3 grid grid-cols-2 gap-3">
+        <div className="card">
+          <div className="mb-4 grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="settings-age" className="label">
               Age
@@ -281,15 +273,16 @@ export default function Settings() {
               className="field"
             />
           </div>
+          </div>
+          {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+          {saved && !error && (
+            <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">Profile updated.</p>
+          )}
+          <button type="submit" disabled={saving || loading} className="btn-primary">
+            {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
+            Save profile
+          </button>
         </div>
-        {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
-        {saved && !error && (
-          <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">Profile updated.</p>
-        )}
-        <button type="submit" disabled={saving || loading} className="btn-primary">
-          {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-          Save profile
-        </button>
       </form>
 
       <button

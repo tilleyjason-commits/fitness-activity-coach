@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Pencil, Sparkles, Trash2, X } from 'lucide-react';
+import { Loader2, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { MEAL_SLOT_ICONS, MEAL_SLOT_LABELS, MEAL_SLOT_TIMES } from '~/lib/constants';
 import { toHHMM } from '~/lib/evaluate';
 import type { MacrosFromAI, MealFood, MealLog, MealSlot } from '~/lib/types';
@@ -119,8 +119,13 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
   const [drafts, setDrafts] = useState<FoodDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** Visible notice when DeepSeek served after NVIDIA failed — never silent. */
-  const [providerNotice, setProviderNotice] = useState<string | null>(null);
+  /** Visible notice when the backup model served — never silent. */
+  const [providerNotice, setProviderNotice] = useState<{
+    model: string;
+    reason: string | null;
+  } | null>(null);
+  // Empty slots collapse to a one-line row so seven cards fit one screen.
+  const [expanded, setExpanded] = useState(mealLog !== null);
 
   // Re-sync only when the underlying row appears/disappears, so in-progress
   // edits on other cards survive parent reloads.
@@ -129,11 +134,13 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
       setDescription(mealLog.raw_input ?? '');
       setMealTime(toHHMM(mealLog.meal_time) ?? MEAL_SLOT_TIMES[slot].start);
       setState('saved');
+      setExpanded(true);
     } else {
       setDescription('');
       setMealTime(MEAL_SLOT_TIMES[slot].start);
       setDrafts([]);
       setState('idle');
+      setExpanded(false);
     }
     setError(null);
     setProviderNotice(null);
@@ -150,11 +157,10 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
       const result = await onCalculate(trimmed, slot);
       setDrafts(result.foods.map(aiToDraft));
       if (result.fallback) {
-        const model = result.model ?? 'DeepSeek';
-        const reason = result.fallback_reason ? ` (${result.fallback_reason})` : '';
-        setProviderNotice(
-          `Fallback model active: ${model}${reason}. NVIDIA was unavailable; results came from DeepSeek instead.`,
-        );
+        setProviderNotice({
+          model: result.model ?? 'the backup model',
+          reason: result.fallback_reason ?? null,
+        });
       } else {
         setProviderNotice(null);
       }
@@ -198,6 +204,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
       setDescription('');
       setDrafts([]);
       setState('idle');
+      setExpanded(false);
       return;
     }
     setSaving(true);
@@ -234,17 +241,39 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
 
   const totals = draftTotals(drafts);
   const busy = state === 'calculating' || saving;
+  const SlotIcon = MEAL_SLOT_ICONS[slot];
+
+  // Empty + untouched: a one-line row keeps seven slots on one screen.
+  if (state === 'idle' && !mealLog && !expanded) {
+    return (
+      <section className="card mb-2 py-2" aria-label={MEAL_SLOT_LABELS[slot]}>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          aria-label={`Add ${MEAL_SLOT_LABELS[slot]}`}
+          className="flex min-h-11 w-full items-center gap-2.5 text-left"
+        >
+          <SlotIcon className="h-5 w-5 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              {MEAL_SLOT_TIMES[slot].hint}
+            </span>
+          </span>
+          <Plus className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section className="card mb-4" aria-label={MEAL_SLOT_LABELS[slot]}>
       <header className="mb-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span aria-hidden className="text-lg">
-                  {MEAL_SLOT_ICONS[slot]}
-                </span>
+                <SlotIcon className="h-5 w-5 shrink-0 text-emerald-500" aria-hidden />
                 <div>
                   <h2 className="text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</h2>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     {MEAL_SLOT_TIMES[slot].hint}
                   </p>
                 </div>
@@ -260,12 +289,22 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
             </header>
 
             {providerNotice && (
-              <p
+              <div
                 role="status"
-                className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+                className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
               >
-                {providerNotice}
-              </p>
+                <p className="font-medium">
+                  Backup AI estimated these macros — double-check the numbers.
+                </p>
+                <details className="mt-1">
+                  <summary className="cursor-pointer font-semibold">Details</summary>
+                  <p className="mt-1">
+                    Served by {providerNotice.model}
+                    {providerNotice.reason && ` — ${providerNotice.reason}`}. The primary provider
+                    was unavailable, so the backup answered instead.
+                  </p>
+                </details>
+              </div>
             )}
 
       {state === 'saved' && mealLog ? (
@@ -384,14 +423,14 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                       type="button"
                       onClick={() => removeDraft(i)}
                       aria-label={`Remove ${draft.food_name}`}
-                      className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-700"
+                      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-700"
                     >
                       <X className="h-4 w-4" />
                     </button>
                   </div>
                   <div className="grid grid-cols-6 gap-1.5">
                     <label className="col-span-1 block">
-                      <span className="block text-[10px] text-slate-400">Qty</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">Qty</span>
                       <input
                         type="number"
                         inputMode="decimal"
@@ -401,7 +440,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                       />
                     </label>
                     <label className="col-span-1 block">
-                      <span className="block text-[10px] text-slate-400">Unit</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">Unit</span>
                       <input
                         type="text"
                         value={draft.unit}
@@ -410,7 +449,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                       />
                     </label>
                     <label className="col-span-1 block">
-                      <span className="block text-[10px] text-slate-400">Cal</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">Cal</span>
                       <input
                         type="number"
                         inputMode="numeric"
@@ -420,7 +459,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                       />
                     </label>
                     <label className="col-span-1 block">
-                      <span className="block text-[10px] text-slate-400">P (g)</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">P (g)</span>
                       <input
                         type="number"
                         inputMode="decimal"
@@ -430,7 +469,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                       />
                     </label>
                     <label className="col-span-1 block">
-                      <span className="block text-[10px] text-slate-400">C (g)</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">C (g)</span>
                       <input
                         type="number"
                         inputMode="decimal"
@@ -440,7 +479,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                       />
                     </label>
                     <label className="col-span-1 block">
-                      <span className="block text-[10px] text-slate-400">F (g)</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">F (g)</span>
                       <input
                         type="number"
                         inputMode="decimal"
@@ -490,7 +529,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                 onClick={() => void handleClear()}
                 disabled={busy}
                 aria-label={`Clear ${MEAL_SLOT_LABELS[slot]}`}
-                className="rounded-xl bg-slate-200 px-3 py-2 text-slate-600 transition-colors hover:bg-slate-300 disabled:opacity-50 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-xl bg-slate-200 px-3 text-slate-600 transition-colors hover:bg-slate-300 disabled:opacity-50 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
               >
                 <Trash2 className="h-4 w-4" />
               </button>

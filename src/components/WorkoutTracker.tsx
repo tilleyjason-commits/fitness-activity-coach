@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Check, Dumbbell, Minus, Plus, Trash2, X } from 'lucide-react';
+import { Check, Dumbbell, Minus, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { CardioWorkoutExercise, WorkoutExercise } from '~/lib/types';
 
 interface WorkoutTrackerProps {
   exercises: WorkoutExercise[];
   cardioExercises: CardioWorkoutExercise[];
-  onToggleSet: (exIdx: number, setIdx: number) => void;
   onLogSet: (exIdx: number, setIdx: number, reps: number, weight: number, rir: number | null) => void;
   onRemoveExercise: (exIdx: number) => void;
   onRemoveCardioExercise: (cardioIdx: number) => void;
@@ -16,11 +15,14 @@ interface ActiveSet {
   setIdx: number;
 }
 
-/** Live set-by-set logger for the active workout: tap a set to log reps/weight/RIR. */
+/**
+ * Live set-by-set logger for the active workout. One tap on a set tile
+ * quick-completes it with its target/current values (and starts rest via the
+ * parent's onLogSet path); the explicit edit control opens the logger sheet.
+ */
 export function WorkoutTracker({
   exercises,
   cardioExercises,
-  onToggleSet,
   onLogSet,
   onRemoveExercise,
   onRemoveCardioExercise,
@@ -34,7 +36,7 @@ export function WorkoutTracker({
     const set = exercises[exIdx].sets[setIdx];
     setActiveSet({ exIdx, setIdx });
     setReps(set.reps);
-    setWeight(set.weight ?? exercises[exIdx].targetWeight ?? 0);
+    setWeight(set.weight);
     setRir(set.rir ?? 2);
   }
 
@@ -95,44 +97,60 @@ export function WorkoutTracker({
                   type="button"
                   onClick={() => onRemoveExercise(exIdx)}
                   aria-label={`Remove ${we.exercise.name}`}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {we.sets.map((set, setIdx) => (
-                <button
-                  key={setIdx}
-                  type="button"
-                  onClick={() => openSetLogger(exIdx, setIdx)}
-                  onDoubleClick={() => onToggleSet(exIdx, setIdx)}
-                  aria-label={`Set ${setIdx + 1} ${set.completed ? 'completed' : 'incomplete'}`}
-                  className={`relative rounded-xl border px-2 py-2 text-left transition-colors ${
-                    set.completed
-                      ? 'border-emerald-500 bg-emerald-50 dark:border-emerald-500/60 dark:bg-emerald-500/10'
-                      : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
-                  }`}
-                >
-                  <span className="block text-[10px] font-semibold uppercase text-slate-400 dark:text-slate-500">
-                    Set {setIdx + 1}
-                  </span>
-                  <span className="block text-xs font-semibold tabular-nums">
-                    {set.reps} × {set.weight ?? we.targetWeight ?? 0} lb
-                  </span>
-                  <span className="block text-[10px] text-slate-500 dark:text-slate-400">
-                    RIR {set.rir ?? '—'}
-                  </span>
-                  {set.completed && (
-                    <Check
-                      className="absolute right-1.5 top-1.5 h-3.5 w-3.5 text-emerald-500"
-                      aria-hidden
-                    />
-                  )}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2">
+              {we.sets.map((set, setIdx) => {
+                return (
+                  <div
+                    key={setIdx}
+                    className={`flex items-stretch overflow-hidden rounded-xl border transition-colors ${
+                      set.completed
+                        ? 'border-emerald-500 bg-emerald-50 dark:border-emerald-500/60 dark:bg-emerald-500/10'
+                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        set.completed
+                          ? openSetLogger(exIdx, setIdx)
+                          : onLogSet(exIdx, setIdx, set.reps, set.weight, set.rir)
+                      }
+                      aria-label={
+                        set.completed
+                          ? `Set ${setIdx + 1} completed — edit`
+                          : `Complete set ${setIdx + 1}: ${set.reps} reps × ${set.weight} lb`
+                      }
+                      className="min-h-11 min-w-0 flex-1 px-2.5 py-2 text-left"
+                    >
+                      <span className="flex items-center gap-1 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">
+                        Set {setIdx + 1}
+                        {set.completed && <Check className="h-3.5 w-3.5 text-emerald-500" aria-hidden />}
+                      </span>
+                      <span className="block text-xs font-semibold tabular-nums">
+                        {set.reps} × {set.weight} lb
+                      </span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">
+                        RIR {set.rir ?? '—'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openSetLogger(exIdx, setIdx)}
+                      aria-label={`Edit set ${setIdx + 1}`}
+                      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
+                    >
+                      <Pencil className="h-4 w-4" aria-hidden />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -186,7 +204,7 @@ export function WorkoutTracker({
                 type="button"
                 onClick={() => setActiveSet(null)}
                 aria-label="Close"
-                className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
+                className="-m-2 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -200,7 +218,7 @@ export function WorkoutTracker({
                     type="button"
                     aria-label="Decrease reps"
                     onClick={() => setReps((v) => Math.max(0, v - 1))}
-                    className="p-2.5 text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
+                    className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
                     <Minus className="h-4 w-4" />
                   </button>
@@ -209,7 +227,7 @@ export function WorkoutTracker({
                     type="button"
                     aria-label="Increase reps"
                     onClick={() => setReps((v) => Math.min(100, v + 1))}
-                    className="p-2.5 text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
+                    className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
                     <Plus className="h-4 w-4" />
                   </button>
@@ -237,7 +255,7 @@ export function WorkoutTracker({
                     type="button"
                     aria-label="Decrease RIR"
                     onClick={() => setRir((v) => Math.max(0, v - 1))}
-                    className="p-2.5 text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
+                    className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
                     <Minus className="h-4 w-4" />
                   </button>
@@ -246,7 +264,7 @@ export function WorkoutTracker({
                     type="button"
                     aria-label="Increase RIR"
                     onClick={() => setRir((v) => Math.min(10, v + 1))}
-                    className="p-2.5 text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
+                    className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
                     <Plus className="h-4 w-4" />
                   </button>

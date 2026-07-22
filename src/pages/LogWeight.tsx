@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { CalendarDays, Loader2, Scale } from 'lucide-react';
@@ -70,7 +70,7 @@ export default function LogWeight() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="Weekly Weigh-in" subtitle="Same scale, same time, before breakfast" backTo="/" />
+      <PageHeader title="Weekly Weigh-in" subtitle="Same scale, same time, before breakfast" backTo="/log" />
 
       {!isSunday && (
         <div className="card mb-4 flex items-start gap-3 border-l-4 border-l-amber-500">

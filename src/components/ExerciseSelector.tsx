@@ -15,6 +15,11 @@ interface ExerciseSelectorProps {
   addLabel?: string;
   /** IDs already in the workout/routine — shown with a check + "Already added". */
   addedIds?: string[];
+  /**
+   * When false the result list flows in the page scroll instead of an inner
+   * scroll region — mid-workout the nested scroll area is a touch trap.
+   */
+  scrollableList?: boolean;
 }
 
 interface StepperProps {
@@ -37,7 +42,7 @@ function Stepper({ label, display, onDecrement, onIncrement }: StepperProps) {
           type="button"
           onClick={onDecrement}
           aria-label={`Decrease ${label.toLowerCase()}`}
-          className="p-2.5 text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
+          className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
         >
           <Minus className="h-4 w-4" />
         </button>
@@ -46,7 +51,7 @@ function Stepper({ label, display, onDecrement, onIncrement }: StepperProps) {
           type="button"
           onClick={onIncrement}
           aria-label={`Increase ${label.toLowerCase()}`}
-          className="p-2.5 text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
+          className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -62,6 +67,7 @@ export function ExerciseSelector({
   title = 'Add Exercise',
   addLabel = 'Add to Workout',
   addedIds = [],
+  scrollableList = true,
 }: ExerciseSelectorProps) {
   const [group, setGroup] = useState<string>(SELECTOR_GROUPS[0]);
   const [query, setQuery] = useState('');
@@ -146,11 +152,7 @@ export function ExerciseSelector({
               setGroup(g);
               setSelected(null);
             }}
-            className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              group === g
-                ? 'bg-emerald-500 text-white'
-                : 'bg-slate-200 text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
-            }`}
+            className={`chip shrink-0 ${group === g ? 'chip-selected' : ''}`}
           >
             {g}
           </button>
@@ -166,7 +168,9 @@ export function ExerciseSelector({
           No exercises match the selected filters.
         </p>
       ) : (
-        <div className="mb-3 max-h-56 space-y-1.5 overflow-y-auto pr-1">
+        <div
+          className={`mb-3 space-y-1.5 ${scrollableList ? 'max-h-56 overflow-y-auto pr-1' : ''}`}
+        >
           {items.map((item) => {
             const isSelected = selected?.id === item.id;
             const alreadyAdded = addedIds.includes(item.id);
@@ -177,14 +181,14 @@ export function ExerciseSelector({
                 onClick={() => setSelected(isSelected ? null : item)}
                 className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors ${
                   isSelected
-                    ? 'border-emerald-500 bg-emerald-50 font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+                    ? 'border-slate-900 bg-slate-100 font-semibold dark:border-slate-300 dark:bg-slate-700'
                     : 'border-slate-200 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:text-slate-200 dark:hover:border-slate-600'
                 }`}
               >
                 <span className="min-w-0">
                   <span className="block">{item.name}</span>
                   {isStrengthExercise(item) && (
-                    <span className="block text-[11px] font-normal text-slate-400 dark:text-slate-500">
+                    <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
                       {item.equipment} · {item.muscleGroup}
                     </span>
                   )}

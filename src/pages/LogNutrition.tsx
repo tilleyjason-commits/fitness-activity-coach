@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+﻿import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ChevronRight, Loader2, Minus, Plus, Sparkles } from 'lucide-react';
@@ -118,7 +118,7 @@ export default function LogNutrition() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="Log Nutrition" subtitle={format(new Date(), 'EEEE, MMMM d')} backTo="/" />
+      <PageHeader title="Adjust Daily Totals" subtitle={format(new Date(), 'EEEE, MMMM d')} backTo="/log" />
 
       <Link
         to="/macros"
@@ -144,9 +144,9 @@ export default function LogNutrition() {
             Protein
           </label>
           <span className={`text-sm font-semibold tabular-nums ${proteinStatus}`}>
-            {proteinValue ?? '—'} g
+            {proteinValue ?? 'â€”'} g
             <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
-              / {TARGETS.proteinMinG}–{TARGETS.proteinMaxG} g
+              / {TARGETS.proteinMinG}â€“{TARGETS.proteinMaxG} g
             </span>
           </span>
         </div>
@@ -238,7 +238,7 @@ export default function LogNutrition() {
               onChange={(e) => setPreGymTime(e.target.value)}
               className="field"
             />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               target ~{MEAL_TIMING.preGymSnack}
             </p>
           </div>
@@ -253,7 +253,7 @@ export default function LogNutrition() {
               onChange={(e) => setPostGymTime(e.target.value)}
               className="field"
             />
-            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               target ~{MEAL_TIMING.postGymMeal}
             </p>
           </div>
