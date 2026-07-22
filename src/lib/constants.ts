@@ -1,10 +1,32 @@
 import rulesJson from '../../rules/rules.json';
-import type { MealSlot } from './types';
+import type { MealSlot, Profile } from './types';
 
-/** Athlete profile + macro targets shipped with the rules file. */
+/** Athlete defaults shipped with the rules file (used when profile fields are empty). */
 export const ATHLETE_PROFILE = rulesJson.athlete_profile;
 
-export const TARGETS = {
+export interface MacroTargets {
+  calories: number;
+  caloriesMin: number;
+  caloriesMax: number;
+  proteinG: number;
+  proteinMinG: number;
+  proteinMaxG: number;
+  carbsG: number;
+  fatG: number;
+}
+
+export interface MealTiming {
+  preGymSnack: string;
+  training: string;
+  postGymMeal: string;
+  snack3pm: string;
+  casein: string;
+  caffeineCutoff: string;
+  bedtime: string;
+  waketime: string;
+}
+
+export const DEFAULT_TARGETS: MacroTargets = {
   calories: ATHLETE_PROFILE.target_calories,
   caloriesMin: 2350,
   caloriesMax: 2650,
@@ -13,9 +35,12 @@ export const TARGETS = {
   proteinMaxG: 205,
   carbsG: ATHLETE_PROFILE.target_carbs_g,
   fatG: ATHLETE_PROFILE.target_fat_g,
-} as const;
+};
 
-export const MEAL_TIMING = {
+/** @deprecated Prefer resolveTargets(profile) for multi-user UI. */
+export const TARGETS = DEFAULT_TARGETS;
+
+export const DEFAULT_MEAL_TIMING: MealTiming = {
   preGymSnack: '10:15',
   training: '11:00',
   postGymMeal: '12:15',
@@ -24,7 +49,83 @@ export const MEAL_TIMING = {
   caffeineCutoff: '14:00',
   bedtime: '22:00',
   waketime: '06:00',
-} as const;
+};
+
+/** @deprecated Prefer resolveMealTiming(profile). */
+export const MEAL_TIMING = DEFAULT_MEAL_TIMING;
+
+function toHHMM(time: string | null | undefined, fallback: string): string {
+  if (!time) return fallback;
+  return time.length > 5 ? time.slice(0, 5) : time;
+}
+
+function addMinutes(hhmm: string, delta: number): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const total = (((h * 60 + m + delta) % (24 * 60)) + 24 * 60) % (24 * 60);
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/**
+ * Profile-driven macro targets. Protein ~1.0 g per lb bodyweight (clamped),
+ * calorie band ±150 around a goal-aware baseline, fat ~0.3 g/lb.
+ */
+export function resolveTargets(profile: Profile | null | undefined): MacroTargets {
+  if (!profile) return { ...DEFAULT_TARGETS };
+
+  const weight = profile.weight_lb && profile.weight_lb > 0 ? profile.weight_lb : null;
+  const goalWeight =
+    profile.goal_weight_lb && profile.goal_weight_lb > 0 ? profile.goal_weight_lb : weight;
+
+  const proteinG = weight
+    ? Math.round(Math.min(220, Math.max(140, weight * 1.0)))
+    : DEFAULT_TARGETS.proteinG;
+  const proteinMinG = proteinG - 5;
+  const proteinMaxG = proteinG + 5;
+
+  let calories = DEFAULT_TARGETS.calories;
+  if (weight && goalWeight) {
+    // Mild deficit when above goal, maintenance near goal, mild surplus below.
+    const deltaLb = weight - goalWeight;
+    calories = Math.round(
+      Math.min(3200, Math.max(1800, 10 * weight - Math.sign(deltaLb) * Math.min(400, Math.abs(deltaLb) * 12))),
+    );
+  } else if (weight) {
+    calories = Math.round(Math.min(3200, Math.max(1800, weight * 12)));
+  }
+
+  const fatG = weight
+    ? Math.round(Math.min(90, Math.max(45, weight * 0.3)))
+    : DEFAULT_TARGETS.fatG;
+  const carbsG = Math.max(
+    120,
+    Math.round((calories - proteinG * 4 - fatG * 9) / 4),
+  );
+
+  return {
+    calories,
+    caloriesMin: calories - 150,
+    caloriesMax: calories + 150,
+    proteinG,
+    proteinMinG,
+    proteinMaxG,
+    carbsG,
+    fatG,
+  };
+}
+
+/** Anchor meal timing around the athlete's preferred training_time. */
+export function resolveMealTiming(profile: Profile | null | undefined): MealTiming {
+  const training = toHHMM(profile?.training_time, DEFAULT_MEAL_TIMING.training);
+  return {
+    ...DEFAULT_MEAL_TIMING,
+    training,
+    preGymSnack: addMinutes(training, -45),
+    postGymMeal: addMinutes(training, 75),
+    // Caffeine cutoff ~3h before typical bedtime remains default unless later customized.
+  };
+}
 
 /** Canonical render order for the macro tracker's meal cards. */
 export const MEAL_SLOTS: MealSlot[] = [
@@ -57,18 +158,31 @@ export const MEAL_SLOT_ICONS: Record<MealSlot, string> = {
   bedtime_snack: '🥛',
 };
 
-export const MEAL_SLOT_TIMES: Record<MealSlot, { start: string; hint: string }> = {
-  breakfast: { start: '07:00', hint: 'Morning meal' },
-  pre_workout_snack: {
-    start: MEAL_TIMING.preGymSnack,
-    hint: `Fuel ~45 min before ${MEAL_TIMING.training} training`,
-  },
-  lunch: { start: '12:00', hint: 'Mid-day meal' },
-  post_gym: { start: MEAL_TIMING.postGymMeal, hint: 'After training (~12:15)' },
-  snack: { start: MEAL_TIMING.snack3pm, hint: '3pm snack' },
-  dinner: { start: '18:00', hint: 'Evening meal' },
-  bedtime_snack: { start: MEAL_TIMING.casein, hint: 'Pre-sleep protein / casein (~20:00)' },
-};
+export function getMealSlotTimes(
+  timing: MealTiming = DEFAULT_MEAL_TIMING,
+): Record<MealSlot, { start: string; hint: string }> {
+  return {
+    breakfast: { start: '07:00', hint: 'Morning meal' },
+    pre_workout_snack: {
+      start: timing.preGymSnack,
+      hint: `Fuel ~45 min before ${timing.training} training`,
+    },
+    lunch: { start: '12:00', hint: 'Mid-day meal' },
+    post_gym: {
+      start: timing.postGymMeal,
+      hint: `After training (~${timing.postGymMeal})`,
+    },
+    snack: { start: timing.snack3pm, hint: '3pm snack' },
+    dinner: { start: '18:00', hint: 'Evening meal' },
+    bedtime_snack: {
+      start: timing.casein,
+      hint: `Pre-sleep protein / casein (~${timing.casein})`,
+    },
+  };
+}
+
+/** Default slot times (Jason baseline / no profile loaded). */
+export const MEAL_SLOT_TIMES = getMealSlotTimes(DEFAULT_MEAL_TIMING);
 
 export type SessionType = 'Upper A' | 'Lower A' | 'Back + Biceps' | 'Upper B' | 'Lower B';
 

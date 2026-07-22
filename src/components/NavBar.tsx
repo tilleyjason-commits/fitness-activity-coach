@@ -4,8 +4,7 @@ import {
   ClipboardList,
   Dumbbell,
   Home,
-  Settings,
-  UtensilsCrossed,
+  MoreHorizontal,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -16,18 +15,28 @@ interface NavItem {
   isActive: (pathname: string) => boolean;
 }
 
+/** Approved IA: Home / Workout / Log / Progress / More */
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', icon: Home, isActive: (p) => p === '/' },
   {
     to: '/training',
-    label: 'Training',
+    label: 'Workout',
     icon: Dumbbell,
     isActive: (p) => p === '/training' || p === '/routines',
   },
-  { to: '/log/training', label: 'Log', icon: ClipboardList, isActive: (p) => p.startsWith('/log') },
-  { to: '/macros', label: 'Macros', icon: UtensilsCrossed, isActive: (p) => p === '/macros' },
-  { to: '/weekly', label: 'Weekly', icon: BarChart3, isActive: (p) => p === '/weekly' },
-  { to: '/settings', label: 'Settings', icon: Settings, isActive: (p) => p === '/settings' },
+  {
+    to: '/log',
+    label: 'Log',
+    icon: ClipboardList,
+    isActive: (p) => p === '/log' || p.startsWith('/log/'),
+  },
+  { to: '/weekly', label: 'Progress', icon: BarChart3, isActive: (p) => p === '/weekly' },
+  {
+    to: '/settings',
+    label: 'More',
+    icon: MoreHorizontal,
+    isActive: (p) => p === '/settings' || p.startsWith('/settings/') || p === '/macros',
+  },
 ];
 
 /** Fixed bottom navigation, sized for one-thumb use on a 390px phone. */
@@ -39,7 +48,7 @@ export function NavBar() {
       className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/95"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
-      <div className="mx-auto grid w-full max-w-md grid-cols-6">
+      <div className="mx-auto grid w-full max-w-md grid-cols-5">
         {NAV_ITEMS.map(({ to, label, icon: Icon, isActive }) => {
           const active = isActive(pathname);
           return (

@@ -1,32 +1,40 @@
-import { TARGETS } from '~/lib/constants';
+import type { MacroTargets } from '~/lib/constants';
+import { DEFAULT_TARGETS } from '~/lib/constants';
 
 interface DayMacroSummaryProps {
   calories: number;
   protein: number;
   carbs: number;
   fat: number;
+  targets?: MacroTargets;
 }
 
 /**
  * Daily totals bar for the macro tracker. Color-coded against the calorie
  * range: green in range, amber under (day in progress), red over.
  */
-export function DayMacroSummary({ calories, protein, carbs, fat }: DayMacroSummaryProps) {
-  const pct = Math.min(100, Math.round((calories / TARGETS.calories) * 100));
+export function DayMacroSummary({
+  calories,
+  protein,
+  carbs,
+  fat,
+  targets = DEFAULT_TARGETS,
+}: DayMacroSummaryProps) {
+  const pct = Math.min(100, Math.round((calories / targets.calories) * 100));
   const status =
-    calories > TARGETS.caloriesMax
+    calories > targets.caloriesMax
       ? { bar: 'bg-red-500', text: 'text-red-600 dark:text-red-400', label: 'over target' }
-      : calories >= TARGETS.caloriesMin
+      : calories >= targets.caloriesMin
         ? { bar: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', label: 'on track' }
-        : calories >= TARGETS.caloriesMin * 0.8
+        : calories >= targets.caloriesMin * 0.8
           ? { bar: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', label: 'close' }
           : { bar: 'bg-slate-400', text: 'text-slate-500 dark:text-slate-400', label: 'in progress' };
 
   const cells = [
-    { label: 'Calories', value: calories.toLocaleString(), target: TARGETS.calories.toLocaleString() },
-    { label: 'Protein', value: `${Math.round(protein)}g`, target: `${TARGETS.proteinG}g` },
-    { label: 'Carbs', value: `${Math.round(carbs)}g`, target: `${TARGETS.carbsG}g` },
-    { label: 'Fat', value: `${Math.round(fat)}g`, target: `${TARGETS.fatG}g` },
+    { label: 'Calories', value: calories.toLocaleString(), target: targets.calories.toLocaleString() },
+    { label: 'Protein', value: `${Math.round(protein)}g`, target: `${targets.proteinG}g` },
+    { label: 'Carbs', value: `${Math.round(carbs)}g`, target: `${targets.carbsG}g` },
+    { label: 'Fat', value: `${Math.round(fat)}g`, target: `${targets.fatG}g` },
   ];
 
   return (

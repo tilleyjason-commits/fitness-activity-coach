@@ -19,7 +19,7 @@ import {
   isCanonicalActive,
   isSupplementRuleApplicable,
 } from '~/lib/supplements';
-import { TARGETS } from '~/lib/constants';
+import { resolveTargets } from '~/lib/constants';
 import { SEVERITY_ORDER, type DailyLog, type Profile, type Recommendation } from '~/lib/types';
 import { StatusDot, type DotStatus } from '~/components/StatusDot';
 import { RecommendationCard } from '~/components/RecommendationCard';
@@ -36,7 +36,11 @@ interface ComplianceItem {
  * Creatine appears only while the user has an active canonical creatine
  * supplement (or as a legacy fallback when the list cannot load).
  */
-function complianceItems(log: DailyLog | null, includeCreatine: boolean): ComplianceItem[] {
+function complianceItems(
+  log: DailyLog | null,
+  includeCreatine: boolean,
+  proteinMinG: number,
+): ComplianceItem[] {
   if (!log) {
     const labels = ['Train', 'Protein', 'Casein', 'Snack', 'Sleep'];
     if (includeCreatine) labels.push('Creatine');
@@ -49,7 +53,7 @@ function complianceItems(log: DailyLog | null, includeCreatine: boolean): Compli
       status:
         log.daily_protein_g === null
           ? 'pending'
-          : log.daily_protein_g >= TARGETS.proteinMinG
+          : log.daily_protein_g >= proteinMinG
             ? 'pass'
             : 'fail',
     },
@@ -80,7 +84,7 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { to: '/log/training', label: 'Training', icon: Dumbbell },
+  { to: '/training', label: 'Workout', icon: Dumbbell },
   { to: '/log/nutrition', label: 'Nutrition', icon: UtensilsCrossed },
   { to: '/log/sleep', label: 'Sleep', icon: Moon },
   { to: '/log/supplements', label: 'Supplements', icon: Pill },
@@ -103,6 +107,7 @@ export default function Dashboard() {
   // Legacy fallback: if the list cannot load (e.g. migration 013 not applied
   // yet), keep the pre-013 behavior of always showing Creatine. While loading,
   // omit only the Creatine dot so the rest of the row renders without flicker.
+  const targets = resolveTargets(profile);
   const showCreatine = supplementsError
     ? true
     : !supplementsLoading && isCanonicalActive(supplements, 'creatine');
@@ -202,7 +207,7 @@ export default function Dashboard() {
       <section className="card mb-4" aria-label="Today's compliance">
         <h2 className="section-title">Today</h2>
         <div className="flex items-start justify-between">
-          {complianceItems(log, showCreatine).map((item) => (
+          {complianceItems(log, showCreatine, targets.proteinMinG).map((item) => (
             <StatusDot key={item.label} status={item.status} label={item.label} />
           ))}
         </div>

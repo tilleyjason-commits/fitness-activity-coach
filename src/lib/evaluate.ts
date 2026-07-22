@@ -1,5 +1,5 @@
 import rulesJson from '../../rules/rules.json';
-import { MEAL_TIMING, muscleForExercise } from './constants';
+import { MEAL_TIMING, muscleForExercise, resolveMealTiming, resolveTargets } from './constants';
 import type { DailyLog, ExerciseLog, Profile, Severity } from './types';
 import { SEVERITY_ORDER } from './types';
 
@@ -14,9 +14,10 @@ import { SEVERITY_ORDER } from './types';
  *  - pass/fail: message templates with {expression} interpolation (ternaries allowed,
  *              plus an abs() helper).
  *
- * The engine compiles each expression with new Function() over a flat context built
- * from the day's log, the athlete profile, and weekly derived metrics. Rules whose
- * referenced fields are not logged yet are reported as 'skipped' (gray), not failed.
+ * Expressions run through a small recursive-descent interpreter (no new Function /
+ * eval). The flat context is built from the day's log, profile-derived targets,
+ * and weekly metrics. Rules whose referenced fields are not logged yet are
+ * reported as 'skipped' (gray), not failed.
  */
 
 export interface Rule {
@@ -83,14 +84,6 @@ export function getRuleById(id: string): Rule | null {
 const IDENTIFIER_RE = /[A-Za-z_][A-Za-z0-9_]*/g;
 const EXPR_KEYWORDS = new Set(['true', 'false', 'null', 'AND', 'OR', 'NOT', 'abs']);
 
-/** Translate the rule DSL (AND/OR/NOT keywords) into JavaScript. */
-function translateExpression(expr: string): string {
-  return expr
-    .replace(/\bAND\b/g, '&&')
-    .replace(/\bOR\b/g, '||')
-    .replace(/\bNOT\b/g, '!');
-}
-
 /** Identifiers an expression reads (string literals stripped first). */
 export function referencedFields(expr: string): string[] {
   const stripped = expr.replace(/'[^']*'|"[^"]*"/g, '');
@@ -98,12 +91,249 @@ export function referencedFields(expr: string): string[] {
   return [...new Set(matches.filter((token) => !EXPR_KEYWORDS.has(token)))];
 }
 
-/** Compile and run one DSL expression against the context. Throws on bad syntax. */
+type Token =
+  | { kind: 'number'; value: number }
+  | { kind: 'string'; value: string }
+  | { kind: 'id'; value: string }
+  | { kind: 'op'; value: string }
+  | { kind: 'eof' };
+
+function tokenize(input: string): Token[] {
+  const tokens: Token[] = [];
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i];
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      i += 1;
+      let value = '';
+      while (i < input.length && input[i] !== quote) {
+        value += input[i];
+        i += 1;
+      }
+      if (i >= input.length) throw new Error('Unterminated string');
+      i += 1;
+      tokens.push({ kind: 'string', value });
+      continue;
+    }
+    if (/[0-9]/.test(ch) || (ch === '.' && /[0-9]/.test(input[i + 1] ?? ''))) {
+      let raw = '';
+      while (i < input.length && /[0-9.]/.test(input[i])) {
+        raw += input[i];
+        i += 1;
+      }
+      tokens.push({ kind: 'number', value: Number(raw) });
+      continue;
+    }
+    if (/[A-Za-z_]/.test(ch)) {
+      let raw = '';
+      while (i < input.length && /[A-Za-z0-9_]/.test(input[i])) {
+        raw += input[i];
+        i += 1;
+      }
+      tokens.push({ kind: 'id', value: raw });
+      continue;
+    }
+    const two = input.slice(i, i + 2);
+    if (['==', '!=', '>=', '<=', '&&', '||'].includes(two)) {
+      tokens.push({ kind: 'op', value: two });
+      i += 2;
+      continue;
+    }
+    if ('()?:!><+-*/,'.includes(ch)) {
+      tokens.push({ kind: 'op', value: ch });
+      i += 1;
+      continue;
+    }
+    throw new Error(`Unexpected character '${ch}' in expression`);
+  }
+  tokens.push({ kind: 'eof' });
+  return tokens;
+}
+
+class ExprParser {
+  private pos = 0;
+
+  constructor(
+    private readonly tokens: Token[],
+    private readonly context: EvalContext,
+  ) {}
+
+  parse(): unknown {
+    const value = this.parseTernary();
+    this.expect('eof');
+    return value;
+  }
+
+  private peek(): Token {
+    return this.tokens[this.pos] ?? { kind: 'eof' };
+  }
+
+  private next(): Token {
+    const token = this.peek();
+    this.pos += 1;
+    return token;
+  }
+
+  private matchOp(...ops: string[]): string | null {
+    const token = this.peek();
+    if (token.kind === 'op' && ops.includes(token.value)) {
+      this.pos += 1;
+      return token.value;
+    }
+    return null;
+  }
+
+  private expect(kind: Token['kind'] | 'op', value?: string): Token {
+    const token = this.next();
+    if (kind === 'op') {
+      if (token.kind !== 'op' || (value !== undefined && token.value !== value)) {
+        throw new Error(`Expected operator ${value ?? ''}`.trim());
+      }
+      return token;
+    }
+    if (token.kind !== kind) throw new Error(`Expected ${kind}`);
+    return token;
+  }
+
+  private parseTernary(): unknown {
+    const condition = this.parseOr();
+    if (!this.matchOp('?')) return condition;
+    const whenTrue = this.parseTernary();
+    this.expect('op', ':');
+    const whenFalse = this.parseTernary();
+    return condition ? whenTrue : whenFalse;
+  }
+
+  private parseOr(): unknown {
+    let left = this.parseAnd();
+    while (this.matchOp('||') || this.matchKeyword('OR')) {
+      const right = this.parseAnd();
+      left = Boolean(left) || Boolean(right);
+    }
+    return left;
+  }
+
+  private parseAnd(): unknown {
+    let left = this.parseNot();
+    while (this.matchOp('&&') || this.matchKeyword('AND')) {
+      const right = this.parseNot();
+      left = Boolean(left) && Boolean(right);
+    }
+    return left;
+  }
+
+  private matchKeyword(word: string): boolean {
+    const token = this.peek();
+    if (token.kind === 'id' && token.value === word) {
+      this.pos += 1;
+      return true;
+    }
+    return false;
+  }
+
+  private parseNot(): unknown {
+    if (this.matchOp('!') || this.matchKeyword('NOT')) {
+      return !this.parseNot();
+    }
+    return this.parseComparison();
+  }
+
+  private parseComparison(): unknown {
+    const left = this.parseAdd();
+    const op = this.matchOp('==', '!=', '>=', '<=', '>', '<');
+    if (!op) return left;
+    const right = this.parseAdd();
+    switch (op) {
+      case '==':
+        return left == right;
+      case '!=':
+        return left != right;
+      case '>=':
+        return (left as number | string) >= (right as number | string);
+      case '<=':
+        return (left as number | string) <= (right as number | string);
+      case '>':
+        return (left as number | string) > (right as number | string);
+      case '<':
+        return (left as number | string) < (right as number | string);
+      default:
+        return false;
+    }
+  }
+
+  private parseAdd(): unknown {
+    let left = this.parseMul();
+    let op = this.matchOp('+', '-');
+    while (op) {
+      const right = this.parseMul();
+      left = op === '+' ? Number(left) + Number(right) : Number(left) - Number(right);
+      op = this.matchOp('+', '-');
+    }
+    return left;
+  }
+
+  private parseMul(): unknown {
+    let left = this.parseUnary();
+    let op = this.matchOp('*', '/');
+    while (op) {
+      const right = this.parseUnary();
+      left = op === '*' ? Number(left) * Number(right) : Number(left) / Number(right);
+      op = this.matchOp('*', '/');
+    }
+    return left;
+  }
+
+  private parseUnary(): unknown {
+    if (this.matchOp('+')) return Number(this.parseUnary());
+    if (this.matchOp('-')) return -Number(this.parseUnary());
+    return this.parsePrimary();
+  }
+
+  private parsePrimary(): unknown {
+    const token = this.peek();
+    if (token.kind === 'number') {
+      this.pos += 1;
+      return token.value;
+    }
+    if (token.kind === 'string') {
+      this.pos += 1;
+      return token.value;
+    }
+    if (token.kind === 'id') {
+      this.pos += 1;
+      if (token.value === 'true') return true;
+      if (token.value === 'false') return false;
+      if (token.value === 'null') return null;
+      if (this.matchOp('(')) {
+        const arg = this.parseTernary();
+        this.expect('op', ')');
+        if (token.value === 'abs') {
+          const fn = this.context.abs;
+          if (typeof fn === 'function') return fn(Number(arg));
+          return Math.abs(Number(arg));
+        }
+        throw new Error(`Unknown function ${token.value}`);
+      }
+      return this.context[token.value] ?? null;
+    }
+    if (this.matchOp('(')) {
+      const value = this.parseTernary();
+      this.expect('op', ')');
+      return value;
+    }
+    throw new Error('Unexpected token in expression');
+  }
+}
+
+/** Run one DSL expression against the context. Throws on bad syntax. */
 export function runExpression(expr: string, context: EvalContext): unknown {
-  const keys = Object.keys(context);
-  const body = `"use strict"; return (${translateExpression(expr)});`;
-  const fn = new Function(...keys, body) as (...args: EvalValue[]) => unknown;
-  return fn(...keys.map((k) => context[k]));
+  const parser = new ExprParser(tokenize(expr.trim()), context);
+  return parser.parse();
 }
 
 /**
@@ -161,7 +391,26 @@ export function checkTrigger(trigger: string, context: EvalContext): boolean {
 }
 
 function resolveTriggerPath(path: string): string {
-  return TRIGGER_PATHS[path] ?? path.split('.').pop() ?? path;
+  if (TRIGGER_PATHS[path]) return TRIGGER_PATHS[path];
+  // Generic log.field → field (covers log.training_done, log.daily_protein_g, …).
+  if (path.startsWith('log.')) {
+    const rest = path.slice(4);
+    if (TRIGGER_PATHS[`log.${rest}`]) return TRIGGER_PATHS[`log.${rest}`];
+    return rest.includes('.') ? (rest.split('.').pop() ?? rest) : rest;
+  }
+  return path.split('.').pop() ?? path;
+}
+
+/** Rewrite trigger pseudo-paths to flat context identifiers. */
+function rewriteTriggerExpression(clause: string): string {
+  let expr = clause;
+  const paths = Object.keys(TRIGGER_PATHS).sort((a, b) => b.length - a.length);
+  for (const path of paths) {
+    expr = expr.split(path).join(TRIGGER_PATHS[path]);
+  }
+  // Any remaining log.field segments become the bare field name.
+  expr = expr.replace(/\blog\.([A-Za-z_][A-Za-z0-9_]*)/g, '$1');
+  return expr;
 }
 
 function checkTriggerClause(clause: string, context: EvalContext): boolean {
@@ -175,12 +424,7 @@ function checkTriggerClause(clause: string, context: EvalContext): boolean {
     return value !== null && value !== undefined && value !== '';
   }
 
-  // Rewrite known pseudo-paths to context fields, longest first.
-  let expr = clause;
-  const paths = Object.keys(TRIGGER_PATHS).sort((a, b) => b.length - a.length);
-  for (const path of paths) {
-    expr = expr.split(path).join(TRIGGER_PATHS[path]);
-  }
+  const expr = rewriteTriggerExpression(clause);
 
   // Bare path with no comparison ("log.training.completed") → truthiness check.
   if (!/[<>=!]/.test(expr)) {
@@ -242,6 +486,8 @@ export function buildContext(
   weekly: WeeklyDerived = EMPTY_WEEKLY,
   profile: Profile | null = null,
 ): EvalContext {
+  const targets = resolveTargets(profile);
+  const timing = resolveMealTiming(profile);
   return {
     // Daily log fields (times normalized to HH:MM for lexical comparison)
     log_date: log.log_date,
@@ -287,13 +533,23 @@ export function buildContext(
     wake_time: toHHMM(log.waketime),
     weekly_weight_change: weekly.weekly_weight_change_lbs,
 
+    // Profile-driven targets (rules should prefer these over hardcoded bands)
+    target_calories: targets.calories,
+    target_calories_min: targets.caloriesMin,
+    target_calories_max: targets.caloriesMax,
+    target_protein: targets.proteinG,
+    target_protein_min: targets.proteinMinG,
+    target_protein_max: targets.proteinMaxG,
+    target_carbs: targets.carbsG,
+    target_fat: targets.fatG,
+
     // Weekly derived metrics
     ...weekly,
 
     // Trigger synthetics
     day_complete: true,
     nutrition_logged: log.daily_calories !== null || log.daily_protein_g !== null,
-    training_time: toHHMM(profile?.training_time ?? '11:00'),
+    training_time: toHHMM(profile?.training_time ?? timing.training),
 
     // Template helper
     abs: (n: number) => Math.abs(n),

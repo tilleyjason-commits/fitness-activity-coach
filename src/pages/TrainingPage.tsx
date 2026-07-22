@@ -22,6 +22,11 @@ import {
   saveWorkoutState,
 } from '~/lib/workout-repo';
 import {
+  flushWorkoutSaveQueue,
+  hasPendingWorkoutSaves,
+  saveWorkoutWithOfflineQueue,
+} from '~/lib/workout-offline-queue';
+import {
   createCardioWorkoutExercise,
   createWorkoutExercise,
   getTodayWeekday,
@@ -128,9 +133,19 @@ export default function TrainingPage() {
   useEffect(() => {
     if (!user) return;
     const controller = createAutosaveController<WorkoutStateType>(
-      (snapshot) => saveWorkoutState(snapshot),
+      (snapshot) => saveWorkoutWithOfflineQueue(snapshot, saveWorkoutState),
       { debounceMs: 1200 },
     );
+    // Drain any offline-queued saves from earlier sessions.
+    if (hasPendingWorkoutSaves()) {
+      void flushWorkoutSaveQueue(saveWorkoutState).then((result) => {
+        if (result.flushed > 0) {
+          setAutosaveState({ status: 'saved', error: null });
+        } else if (result.lastError) {
+          setAutosaveState({ status: 'error', error: result.lastError });
+        }
+      });
+    }
     autosaveRef.current = controller;
     setAutosaveState(controller.getState());
     const unsubscribe = controller.subscribe(setAutosaveState);

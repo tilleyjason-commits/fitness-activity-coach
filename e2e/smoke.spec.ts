@@ -42,7 +42,7 @@ test.describe('authenticated disposable-account smoke', () => {
     try {
       await signInThroughUi(page);
 
-      await page.getByRole('link', { name: 'Training', exact: true }).click();
+      await page.getByRole('link', { name: 'Workout', exact: true }).click();
       await expect(page).toHaveURL(/#\/training/);
       await expect(page.getByRole('heading', { name: 'Training' })).toBeVisible();
 
@@ -90,9 +90,9 @@ test.describe('authenticated disposable-account smoke', () => {
       expect(readError).toBeNull();
       expect(readBack?.energy_score).toBe(3);
 
-      await page.getByRole('link', { name: 'Settings' }).click();
-      await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
-      await page.getByRole('button', { name: 'Log out' }).click();
+      await page.getByRole('link', { name: 'More' }).click();
+            await expect(page.getByRole('heading', { name: 'More' })).toBeVisible();
+            await page.getByRole('button', { name: 'Log out' }).click();
       await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
     } finally {
       if (api && dailyLogId) {

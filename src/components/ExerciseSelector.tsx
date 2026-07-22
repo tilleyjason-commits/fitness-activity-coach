@@ -74,7 +74,11 @@ export function ExerciseSelector({
   const [distanceMiles, setDistanceMiles] = useState(0);
 
   const cardioMode = isCardioGroup(group);
-  const items = getSelectorItems(group, { query, equipment });
+  const queryReady = query.trim().length >= 2;
+  const equipmentReady = equipment !== '';
+  // Empty-until-filter: avoid dumping the full commercial catalog on first paint.
+  const listUnlocked = cardioMode || queryReady || equipmentReady || group !== SELECTOR_GROUPS[0];
+  const items = listUnlocked ? getSelectorItems(group, { query, equipment }) : [];
   const selectedAlreadyAdded = selected !== null && addedIds.includes(selected.id);
 
   function handleAdd() {
@@ -153,7 +157,11 @@ export function ExerciseSelector({
         ))}
       </div>
 
-      {items.length === 0 ? (
+      {!listUnlocked ? (
+        <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+          Search by name, pick equipment, or choose a muscle group to browse exercises.
+        </p>
+      ) : items.length === 0 ? (
         <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
           No exercises match the selected filters.
         </p>

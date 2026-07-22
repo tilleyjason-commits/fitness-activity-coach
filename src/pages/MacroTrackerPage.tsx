@@ -1,23 +1,42 @@
 import { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
+import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
-import { calculateMacros, deleteMeal, getMealFoods, getMealLogs, saveMeal } from '~/lib/db';
-import { MEAL_SLOTS } from '~/lib/constants';
-import type { MealFood, MealLog, MealSlot } from '~/lib/types';
+import {
+  calculateMacros,
+  deleteMeal,
+  getMealFoods,
+  getMealLogs,
+  getProfile,
+  saveMeal,
+} from '~/lib/db';
+import { MEAL_SLOTS, resolveTargets } from '~/lib/constants';
+import type { MealFood, MealLog, MealSlot, Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { MealCard, type MealSaveInput } from '~/components/MealCard';
 import { DayMacroSummary } from '~/components/DayMacroSummary';
 
 /** AI-powered per-meal macro tracker: the canonical MEAL_SLOTS summing into daily_logs. */
 export default function MacroTrackerPage() {
+  const { user } = useAuth();
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const { log, loading, save, reload } = useDailyLog(date);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
   const [mealFoods, setMealFoods] = useState<MealFood[]>([]);
   const [mealsLoading, setMealsLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    getProfile(user.id)
+      .then(setProfile)
+      .catch(() => setProfile(null));
+  }, [user]);
+
+  const targets = resolveTargets(profile);
 
   const loadMeals = useCallback(async (dailyLogId: string | null) => {
     if (!dailyLogId) {
@@ -128,6 +147,7 @@ export default function MacroTrackerPage() {
             protein={dayTotals.protein}
             carbs={dayTotals.carbs}
             fat={dayTotals.fat}
+            targets={targets}
           />
         </>
       )}

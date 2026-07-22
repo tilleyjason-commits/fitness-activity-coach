@@ -193,7 +193,7 @@ describe('supplements quick action', () => {
       'href',
       expect.stringContaining('/log/supplements'),
     );
-    expect(screen.getByRole('link', { name: /Log Training/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Log Workout/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Log Nutrition/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Log Sleep/ })).toBeInTheDocument();
   });

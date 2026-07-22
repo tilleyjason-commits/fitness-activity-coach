@@ -8,44 +8,12 @@ import type { Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { ToggleRow } from '~/components/ToggleRow';
 
-function toStr(value: number | null): string {
-  return value === null ? '' : String(value);
+function toStr(value: number | null | undefined): string {
+  return value === null || value === undefined ? '' : String(value);
 }
 
 function toNum(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
-}
-
-interface InfoRow {
-  label: string;
-  value: string;
-}
-
-function profileRows(profile: Profile | null): InfoRow[] {
-  const dash = '—';
-  return [
-    { label: 'Age', value: profile?.age !== null && profile ? `${profile.age}` : dash },
-    {
-      label: 'Height',
-      value: profile?.height_cm != null ? `${profile.height_cm} cm` : dash,
-    },
-    {
-      label: 'Training experience',
-      value: profile?.training_years != null ? `${profile.training_years} yr` : dash,
-    },
-    {
-      label: 'Training time',
-      value: profile?.training_time != null ? profile.training_time.slice(0, 5) : dash,
-    },
-    {
-      label: 'Goal weight',
-      value: profile?.goal_weight_lb != null ? `${profile.goal_weight_lb} lb` : dash,
-    },
-    {
-      label: 'Goal body fat',
-      value: profile?.goal_bodyfat_pct != null ? `${profile.goal_bodyfat_pct}%` : dash,
-    },
-  ];
 }
 
 export default function Settings() {
@@ -55,8 +23,14 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<Theme>(getStoredTheme());
 
+  const [age, setAge] = useState('');
+  const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
   const [bodyfat, setBodyfat] = useState('');
+  const [goalWeight, setGoalWeight] = useState('');
+  const [goalBodyfat, setGoalBodyfat] = useState('');
+  const [trainingYears, setTrainingYears] = useState('');
+  const [trainingTime, setTrainingTime] = useState('11:00');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,8 +42,14 @@ export default function Settings() {
       .then((data) => {
         if (!active) return;
         setProfile(data);
-        setWeight(toStr(data?.weight_lb ?? null));
-        setBodyfat(toStr(data?.bodyfat_pct ?? null));
+        setAge(toStr(data?.age));
+        setHeight(toStr(data?.height_cm));
+        setWeight(toStr(data?.weight_lb));
+        setBodyfat(toStr(data?.bodyfat_pct));
+        setGoalWeight(toStr(data?.goal_weight_lb));
+        setGoalBodyfat(toStr(data?.goal_bodyfat_pct));
+        setTrainingYears(toStr(data?.training_years));
+        setTrainingTime((data?.training_time ?? '11:00').slice(0, 5));
       })
       .catch((e: unknown) => {
         if (active) setError(e instanceof Error ? e.message : 'Failed to load profile');
@@ -98,14 +78,14 @@ export default function Settings() {
       const updated = await upsertProfile({
         id: user.id,
         user_id: user.id,
-        age: profile?.age ?? null,
-        height_cm: profile?.height_cm ?? null,
+        age: toNum(age),
+        height_cm: toNum(height),
         weight_lb: toNum(weight),
         bodyfat_pct: toNum(bodyfat),
-        goal_bodyfat_pct: profile?.goal_bodyfat_pct ?? null,
-        goal_weight_lb: profile?.goal_weight_lb ?? null,
-        training_years: profile?.training_years ?? null,
-        training_time: profile?.training_time ?? null,
+        goal_bodyfat_pct: toNum(goalBodyfat),
+        goal_weight_lb: toNum(goalWeight),
+        training_years: toNum(trainingYears),
+        training_time: trainingTime.trim() === '' ? null : trainingTime,
       });
       setProfile(updated);
       setSaved(true);
@@ -123,32 +103,20 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader title="Settings" backTo="/" />
+      <PageHeader title="More" backTo="/" />
 
-      <section className="card mb-4" aria-label="Profile">
-        <div className="mb-3 flex items-center gap-3">
+      <section className="card mb-4" aria-label="Account">
+        <div className="mb-1 flex items-center gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
             <UserRound className="h-5 w-5 text-emerald-500" aria-hidden />
           </span>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{user?.email ?? 'Signed in'}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Profile</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {profile ? 'Profile loaded' : loading ? 'Loading…' : 'No profile yet'}
+            </p>
           </div>
         </div>
-        {loading ? (
-          <p className="animate-pulse text-sm text-slate-500 dark:text-slate-400">
-            Loading profile…
-          </p>
-        ) : (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-            {profileRows(profile).map((row) => (
-              <div key={row.label}>
-                <dt className="text-xs text-slate-500 dark:text-slate-400">{row.label}</dt>
-                <dd className="text-sm font-medium">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
       </section>
 
       <section className="mb-4" aria-label="Appearance">
@@ -162,8 +130,26 @@ export default function Settings() {
         />
       </section>
 
-      <section className="mb-4" aria-label="Supplements">
-        <h2 className="section-title">Supplements</h2>
+      <section className="mb-4" aria-label="Tools">
+        <h2 className="section-title">Tools</h2>
+        <Link to="/macros" className="card mb-2 flex w-full items-center gap-3">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">Meals & macros</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              AI or manual meal logging
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+        </Link>
+        <Link to="/routines" className="card mb-2 flex w-full items-center gap-3">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium">Weekly routines</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400">
+              Preset workout templates
+            </span>
+          </span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
+        </Link>
         <Link to="/settings/supplements" className="card flex w-full items-center gap-3">
           <span className="shrink-0 text-slate-400 dark:text-slate-500">
             <Pill className="h-5 w-5" aria-hidden />
@@ -178,22 +164,50 @@ export default function Settings() {
         </Link>
       </section>
 
-      <form onSubmit={handleSubmit} className="mb-4" aria-label="Body stats">
-        <h2 className="section-title">Body stats</h2>
-        <div className="card mb-3 space-y-4">
+      <form onSubmit={handleSubmit} className="mb-4" aria-label="Profile editor">
+        <h2 className="section-title">Profile</h2>
+        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+          Targets, meal timing, and coaching rules use these values.
+        </p>
+        <div className="card mb-3 grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="settings-age" className="label">
+              Age
+            </label>
+            <input
+              id="settings-age"
+              type="number"
+              min={0}
+              value={age}
+              onChange={(e) => setAge(e.target.value)}
+              className="field"
+            />
+          </div>
+          <div>
+            <label htmlFor="settings-height" className="label">
+              Height (cm)
+            </label>
+            <input
+              id="settings-height"
+              type="number"
+              min={0}
+              step="0.1"
+              value={height}
+              onChange={(e) => setHeight(e.target.value)}
+              className="field"
+            />
+          </div>
           <div>
             <label htmlFor="settings-weight" className="label">
-              Current weight (lb)
+              Weight (lb)
             </label>
             <input
               id="settings-weight"
               type="number"
-              inputMode="decimal"
               min={0}
               step="0.1"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}
-              placeholder="e.g. 212.4"
               className="field"
             />
           </div>
@@ -204,13 +218,66 @@ export default function Settings() {
             <input
               id="settings-bodyfat"
               type="number"
-              inputMode="decimal"
               min={0}
               max={60}
               step="0.1"
               value={bodyfat}
               onChange={(e) => setBodyfat(e.target.value)}
-              placeholder="e.g. 24.5"
+              className="field"
+            />
+          </div>
+          <div>
+            <label htmlFor="settings-goal-weight" className="label">
+              Goal weight (lb)
+            </label>
+            <input
+              id="settings-goal-weight"
+              type="number"
+              min={0}
+              step="0.1"
+              value={goalWeight}
+              onChange={(e) => setGoalWeight(e.target.value)}
+              className="field"
+            />
+          </div>
+          <div>
+            <label htmlFor="settings-goal-bf" className="label">
+              Goal body fat (%)
+            </label>
+            <input
+              id="settings-goal-bf"
+              type="number"
+              min={0}
+              max={60}
+              step="0.1"
+              value={goalBodyfat}
+              onChange={(e) => setGoalBodyfat(e.target.value)}
+              className="field"
+            />
+          </div>
+          <div>
+            <label htmlFor="settings-years" className="label">
+              Training years
+            </label>
+            <input
+              id="settings-years"
+              type="number"
+              min={0}
+              step="0.5"
+              value={trainingYears}
+              onChange={(e) => setTrainingYears(e.target.value)}
+              className="field"
+            />
+          </div>
+          <div>
+            <label htmlFor="settings-training-time" className="label">
+              Training time
+            </label>
+            <input
+              id="settings-training-time"
+              type="time"
+              value={trainingTime}
+              onChange={(e) => setTrainingTime(e.target.value)}
               className="field"
             />
           </div>

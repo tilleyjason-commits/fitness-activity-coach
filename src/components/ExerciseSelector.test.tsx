@@ -11,6 +11,14 @@ function renderSelector() {
 }
 
 describe('ExerciseSelector commercial-gym catalog', () => {
+  it('does not dump the full catalog until the user filters', () => {
+    renderSelector();
+    expect(screen.queryByRole('button', { name: /Chest Press Machine/i })).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Search by name, pick equipment, or choose a muscle group/i),
+    ).toBeInTheDocument();
+  });
+
   it('searches the full library and filters it by equipment', async () => {
     const user = userEvent.setup();
     renderSelector();

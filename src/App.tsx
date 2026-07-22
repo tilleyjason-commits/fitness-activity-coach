@@ -9,6 +9,7 @@ const Login = lazy(() => import('~/pages/Login'));
 const Dashboard = lazy(() => import('~/pages/Dashboard'));
 const TrainingPage = lazy(() => import('~/pages/TrainingPage'));
 const RoutinesPage = lazy(() => import('~/pages/RoutinesPage'));
+const LogHub = lazy(() => import('~/pages/LogHub'));
 const LogTraining = lazy(() => import('~/pages/LogTraining'));
 const LogNutrition = lazy(() => import('~/pages/LogNutrition'));
 const LogSupplements = lazy(() => import('~/pages/LogSupplements'));
@@ -90,6 +91,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/training" element={<TrainingPage />} />
             <Route path="/routines" element={<RoutinesPage />} />
+            <Route path="/log" element={<LogHub />} />
             <Route path="/log/training" element={<LogTraining />} />
             <Route path="/log/nutrition" element={<LogNutrition />} />
             <Route path="/log/supplements" element={<LogSupplements />} />

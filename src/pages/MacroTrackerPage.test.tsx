@@ -12,9 +12,14 @@ import type { DailyLog, MealFood, MealLog } from '~/lib/types';
 const getMealLogsMock = vi.fn();
 const getMealFoodsMock = vi.fn();
 
+vi.mock('~/context/AuthContext', () => ({
+  useAuth: () => ({ user: { id: 'user-1', email: 't@t.com' }, loading: false }),
+}));
+
 vi.mock('~/lib/db', () => ({
   getMealLogs: (...args: unknown[]) => getMealLogsMock(...args),
   getMealFoods: (...args: unknown[]) => getMealFoodsMock(...args),
+  getProfile: () => Promise.resolve(null),
   saveMeal: vi.fn(),
   deleteMeal: vi.fn(),
   calculateMacros: vi.fn(),
