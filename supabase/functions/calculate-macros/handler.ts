@@ -13,9 +13,9 @@
 //   503 { error: { code: 'provider_unavailable' } }   — both providers failed
 //   500 { error: { code: 'internal' } }               — unexpected fault
 //
-// Provider policy: NVIDIA first, DeepSeek fallback. Fallback is NEVER silent —
+// Provider policy: OpenRouter first, NVIDIA fallback. Fallback is NEVER silent —
 // the 200 body always names which provider/model served the answer and sets
-// fallback:true when DeepSeek was used after NVIDIA failed.
+// fallback:true when NVIDIA was used after OpenRouter failed.
 //
 // Log hygiene: nothing user-supplied (meal descriptions), no auth headers, no
 // provider response bodies — only codes, statuses, and lengths.
@@ -31,7 +31,7 @@ export const MEAL_SLOTS = [
 ] as const;
 export type MealSlot = (typeof MEAL_SLOTS)[number];
 
-export type MacroProviderId = 'nvidia' | 'deepseek';
+export type MacroProviderId = 'openrouter' | 'nvidia';
 
 export interface AIFood {
   food_name: string;
