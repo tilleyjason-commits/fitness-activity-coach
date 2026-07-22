@@ -5,13 +5,17 @@
 // under Vitest (Node) unchanged.
 //
 // Response contract (structured errors, machine-readable code):
-//   200 { foods, meal_total }
+//   200 { foods, meal_total, provider, model, fallback? }
 //   400 { error: { code: 'invalid_request' } }        — bad body
 //   401 { error: { code: 'unauthenticated' } }        — missing/invalid JWT
 //   429 { error: { code: 'rate_limited', retry_after_seconds? } } — app limit
 //   502 { error: { code: 'provider_invalid_output' } }— unparseable model output
-//   503 { error: { code: 'provider_unavailable' } }   — provider 429/5xx/network
+//   503 { error: { code: 'provider_unavailable' } }   — both providers failed
 //   500 { error: { code: 'internal' } }               — unexpected fault
+//
+// Provider policy: NVIDIA first, DeepSeek fallback. Fallback is NEVER silent —
+// the 200 body always names which provider/model served the answer and sets
+// fallback:true when DeepSeek was used after NVIDIA failed.
 //
 // Log hygiene: nothing user-supplied (meal descriptions), no auth headers, no
 // provider response bodies — only codes, statuses, and lengths.
@@ -26,6 +30,8 @@ export const MEAL_SLOTS = [
   'bedtime_snack',
 ] as const;
 export type MealSlot = (typeof MEAL_SLOTS)[number];
+
+export type MacroProviderId = 'nvidia' | 'deepseek';
 
 export interface AIFood {
   food_name: string;
@@ -44,6 +50,14 @@ export interface RateLimitDecision {
   retry_after_seconds?: number;
 }
 
+export interface ProviderAttempt {
+  /** Machine id for the serving stack (nvidia | deepseek). */
+  provider: MacroProviderId;
+  /** Exact model id sent to the provider. */
+  model: string;
+  response: Response;
+}
+
 export interface MacroHandlerDeps {
   /** Resolve the verified Supabase user id from the Authorization header, or null. */
   verifyUser: (authHeader: string) => Promise<string | null>;
@@ -52,8 +66,13 @@ export interface MacroHandlerDeps {
    * is within quota. Server-enforced (DB RPC) — never process memory.
    */
   consumeRateLimit: (userId: string, authHeader: string) => Promise<RateLimitDecision>;
-  /** Perform the provider chat-completion call. */
-  callProvider: (description: string, mealSlot: MealSlot) => Promise<Response>;
+  /** Primary provider (NVIDIA). */
+  callPrimaryProvider: (description: string, mealSlot: MealSlot) => Promise<ProviderAttempt>;
+  /**
+   * Fallback provider (DeepSeek). Return null when the fallback key is not
+   * configured so the handler can report a clear dual-failure.
+   */
+  callFallbackProvider: (description: string, mealSlot: MealSlot) => Promise<ProviderAttempt | null>;
   /** Sink for diagnostic logging (console.error in production). */
   log: (...parts: string[]) => void;
 }
@@ -85,7 +104,7 @@ function asConfidence(value: unknown): AIFood['confidence'] {
 }
 
 /** GLM sometimes wraps JSON in markdown fences; extract the outermost object. */
-function extractJson(content: string): string {
+export function extractJson(content: string): string {
   const start = content.indexOf('{');
   const end = content.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) {
@@ -94,7 +113,7 @@ function extractJson(content: string): string {
   return content.slice(start, end + 1);
 }
 
-function normalizeFoods(raw: unknown): AIFood[] {
+export function normalizeFoods(raw: unknown): AIFood[] {
   if (!Array.isArray(raw)) throw new Error('Model output missing "foods" array');
   return raw.map((item) => {
     const food = (item ?? {}) as Record<string, unknown>;
@@ -109,6 +128,55 @@ function normalizeFoods(raw: unknown): AIFood[] {
       confidence: asConfidence(food.confidence),
     };
   });
+}
+
+export function parseProviderCompletion(providerRes: Response): Promise<{ foods: AIFood[]; meal_total: { calories: number; protein_g: number; carbs_g: number; fat_g: number } }> {
+  return providerRes.json().then((completion) => {
+    const payload = completion as {
+      choices?: {
+        message?: {
+          content?: string | null;
+          reasoning_content?: string | null;
+          reasoning?: string | null;
+        };
+      }[];
+    };
+    const message = payload.choices?.[0]?.message;
+    const content =
+      message?.content ||
+      message?.reasoning_content ||
+      message?.reasoning ||
+      '';
+    if (!content) throw new Error('Empty completion from model');
+
+    const parsed = JSON.parse(extractJson(content)) as { foods?: unknown };
+    const foods = normalizeFoods(parsed.foods);
+
+    const meal_total = foods.reduce(
+      (acc, food) => ({
+        calories: acc.calories + food.calories,
+        protein_g: Math.round((acc.protein_g + food.protein_g) * 10) / 10,
+        carbs_g: Math.round((acc.carbs_g + food.carbs_g) * 10) / 10,
+        fat_g: Math.round((acc.fat_g + food.fat_g) * 10) / 10,
+      }),
+      { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
+    );
+
+    return { foods, meal_total };
+  });
+}
+
+function providerFailureMessage(status: number, label: string): string {
+  if (status === 401 || status === 403) {
+    return `${label} rejected the API key.`;
+  }
+  if (status === 429) {
+    return `${label} is rate-limiting requests.`;
+  }
+  if (status === 404) {
+    return `${label} model is unavailable.`;
+  }
+  return `${label} returned HTTP ${status}.`;
 }
 
 export function createMacroHandler(deps: MacroHandlerDeps) {
@@ -164,90 +232,80 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
         );
       }
 
-      // 4. Provider call (one short retry on transient 429/5xx).
-      let providerRes: Response;
+      // 4. NVIDIA first.
+      let primary: ProviderAttempt | null = null;
+      let primaryError = 'NVIDIA was unreachable.';
       try {
-        providerRes = await deps.callProvider(description, mealSlot);
-        if (!providerRes.ok && (providerRes.status === 429 || providerRes.status >= 500)) {
-          deps.log(`calculate-macros provider transient status=${providerRes.status}; retrying once`);
+        primary = await deps.callPrimaryProvider(description, mealSlot);
+        if (!primary.response.ok && (primary.response.status === 429 || primary.response.status >= 500)) {
+          deps.log(`calculate-macros nvidia transient status=${primary.response.status}; retrying once`);
           await new Promise((r) => setTimeout(r, 800));
-          providerRes = await deps.callProvider(description, mealSlot);
+          primary = await deps.callPrimaryProvider(description, mealSlot);
+        }
+        if (primary.response.ok) {
+          try {
+            const parsed = await parseProviderCompletion(primary.response);
+            return jsonResponse({
+              ...parsed,
+              provider: primary.provider,
+              model: primary.model,
+              fallback: false,
+            });
+          } catch {
+            deps.log('calculate-macros nvidia output unparseable; trying deepseek fallback');
+            primaryError = 'NVIDIA returned unparseable output.';
+          }
+        } else {
+          deps.log(`calculate-macros nvidia error status=${primary.response.status}`);
+          primaryError = providerFailureMessage(primary.response.status, 'NVIDIA');
         }
       } catch {
-        deps.log('calculate-macros provider network failure');
-        return errorResponse(503, 'provider_unavailable', 'The AI provider is unreachable. Try again soon or enter macros manually.');
+        deps.log('calculate-macros nvidia network failure; trying deepseek fallback');
+        primaryError = 'NVIDIA was unreachable.';
       }
 
-      if (!providerRes.ok) {
-        // Log status only — provider bodies can echo user content or secrets.
-        deps.log(`calculate-macros provider error status=${providerRes.status}`);
-        if (providerRes.status === 401 || providerRes.status === 403) {
-          return errorResponse(
-            503,
-            'provider_unavailable',
-            'AI provider rejected the API key. Update NVIDIA_API_KEY in Supabase secrets, or enter macros manually.',
-          );
-        }
-        if (providerRes.status === 429) {
-          return errorResponse(
-            503,
-            'provider_unavailable',
-            'The AI provider is rate-limiting requests right now. Wait a minute and try again, or enter macros manually.',
-          );
-        }
-        if (providerRes.status === 404) {
-          return errorResponse(
-            503,
-            'provider_unavailable',
-            'The configured AI model is unavailable. Check the model id / redeploy calculate-macros, or enter macros manually.',
-          );
-        }
+      // 5. DeepSeek fallback — always announced in the success body.
+      let fallback: ProviderAttempt | null = null;
+      try {
+        fallback = await deps.callFallbackProvider(description, mealSlot);
+      } catch {
+        deps.log('calculate-macros deepseek network failure');
+        fallback = null;
+      }
+
+      if (!fallback) {
         return errorResponse(
           503,
           'provider_unavailable',
-          'The AI provider is temporarily unavailable. Try again soon or enter macros manually.',
+          `${primaryError} DeepSeek fallback is not configured (set DEEPSEEK_API_KEY). Enter macros manually.`,
+        );
+      }
+
+      if (!fallback.response.ok) {
+        deps.log(`calculate-macros deepseek error status=${fallback.response.status}`);
+        const fallbackError = providerFailureMessage(fallback.response.status, 'DeepSeek');
+        return errorResponse(
+          503,
+          'provider_unavailable',
+          `${primaryError} ${fallbackError} Enter macros manually.`,
         );
       }
 
       try {
-        const completion = (await providerRes.json()) as {
-          choices?: {
-            message?: {
-              content?: string | null;
-              reasoning_content?: string | null;
-              reasoning?: string | null;
-            };
-          }[];
-        };
-        const message = completion.choices?.[0]?.message;
-        const content =
-          message?.content ||
-          message?.reasoning_content ||
-          message?.reasoning ||
-          '';
-        if (!content) throw new Error('Empty completion from model');
-
-        const parsed = JSON.parse(extractJson(content)) as { foods?: unknown };
-        const foods = normalizeFoods(parsed.foods);
-
-        // Recompute totals server-side so they always match the food rows.
-        const meal_total = foods.reduce(
-          (acc, food) => ({
-            calories: acc.calories + food.calories,
-            protein_g: Math.round((acc.protein_g + food.protein_g) * 10) / 10,
-            carbs_g: Math.round((acc.carbs_g + food.carbs_g) * 10) / 10,
-            fat_g: Math.round((acc.fat_g + food.fat_g) * 10) / 10,
-          }),
-          { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 },
-        );
-
-        return jsonResponse({ foods, meal_total });
+        const parsed = await parseProviderCompletion(fallback.response);
+        return jsonResponse({
+          ...parsed,
+          provider: fallback.provider,
+          model: fallback.model,
+          fallback: true,
+          fallback_reason: primaryError,
+        });
       } catch {
-        deps.log('calculate-macros provider output unparseable');
+        deps.log('calculate-macros deepseek output unparseable');
         return errorResponse(
           502,
           'provider_invalid_output',
-          'The AI response could not be understood. Try again or enter macros manually.',
+          `${primaryError} DeepSeek also returned unreadable output. Enter macros manually.`,
         );
       }
     } catch {

@@ -197,6 +197,14 @@ export interface MacrosFromAI {
     carbs_g: number;
     fat_g: number;
   };
+  /** Which stack produced the answer (nvidia primary, deepseek fallback). */
+  provider?: 'nvidia' | 'deepseek';
+  /** Exact model id used for the successful calculation. */
+  model?: string;
+  /** True when DeepSeek served after NVIDIA failed — always surface in UI. */
+  fallback?: boolean;
+  /** Short machine/human reason NVIDIA failed (present when fallback is true). */
+  fallback_reason?: string;
 }
 
 /** One row of the user's configurable supplement list (migration 013). */

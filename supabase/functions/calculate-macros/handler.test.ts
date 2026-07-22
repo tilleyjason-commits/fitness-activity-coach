@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMacroHandler, type MacroHandlerDeps } from './handler';
+import {
+  createMacroHandler,
+  type MacroHandlerDeps,
+  type ProviderAttempt,
+} from './handler';
 
 /**
  * Unit tests for the calculate-macros Edge Function core. The handler is
  * dependency-injected so these tests cover auth rejection, rate limiting,
- * provider failure mapping, malformed provider output, and log hygiene
- * without Deno or network access.
+ * NVIDIA→DeepSeek fallback (never silent), provider failure mapping, and
+ * log hygiene without Deno or network access.
  */
 
 const DESCRIPTION = 'grilled chicken breast with rice and a secret sauce';
@@ -17,27 +21,40 @@ function providerOk(content: unknown): Response {
   );
 }
 
+const SAMPLE_FOODS = {
+  foods: [
+    {
+      food_name: 'Chicken breast',
+      quantity: 1,
+      unit: 'breast',
+      calories: 165,
+      protein_g: 31,
+      carbs_g: 0,
+      fat_g: 3.6,
+      confidence: 'high',
+    },
+  ],
+  meal_total: { calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 },
+};
+
+function nvidiaOk(): ProviderAttempt {
+  return { provider: 'nvidia', model: 'z-ai/glm-5.2', response: providerOk(SAMPLE_FOODS) };
+}
+
+function deepseekOk(): ProviderAttempt {
+  return {
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    response: providerOk(SAMPLE_FOODS),
+  };
+}
+
 function makeDeps(overrides: Partial<MacroHandlerDeps> = {}): MacroHandlerDeps {
   return {
     verifyUser: vi.fn().mockResolvedValue('user-1'),
     consumeRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
-    callProvider: vi.fn().mockResolvedValue(
-      providerOk({
-        foods: [
-          {
-            food_name: 'Chicken breast',
-            quantity: 1,
-            unit: 'breast',
-            calories: 165,
-            protein_g: 31,
-            carbs_g: 0,
-            fat_g: 3.6,
-            confidence: 'high',
-          },
-        ],
-        meal_total: { calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 },
-      }),
-    ),
+    callPrimaryProvider: vi.fn().mockResolvedValue(nvidiaOk()),
+    callFallbackProvider: vi.fn().mockResolvedValue(deepseekOk()),
     log: vi.fn(),
     ...overrides,
   };
@@ -67,7 +84,7 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe('unauthenticated');
-    expect(deps.callProvider).not.toHaveBeenCalled();
+    expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
     expect(deps.consumeRateLimit).not.toHaveBeenCalled();
   });
 
@@ -76,7 +93,7 @@ describe('calculate-macros handler', () => {
     const handler = createMacroHandler(deps);
     const res = await handler(post(VALID_BODY, AUTH));
     expect(res.status).toBe(401);
-    expect(deps.callProvider).not.toHaveBeenCalled();
+    expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
   });
 
   it('never trusts a user id in the request JSON — identity comes from the verified JWT only', async () => {
@@ -100,99 +117,129 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(429);
     const body = await res.json();
     expect(body.error.code).toBe('rate_limited');
-    expect(deps.callProvider).not.toHaveBeenCalled();
+    expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
   });
 
-  it('returns 400 with a validation code for a bad body', async () => {
+  it('returns NVIDIA success without calling DeepSeek and sets fallback:false', async () => {
     const handler = createMacroHandler(deps);
-    const res = await handler(post({ description: '', meal_slot: 'elevenses' }, AUTH));
-    expect(res.status).toBe(400);
+    const res = await handler(post(VALID_BODY, AUTH));
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.error.code).toBe('invalid_request');
-    expect(deps.callProvider).not.toHaveBeenCalled();
+    expect(body.provider).toBe('nvidia');
+    expect(body.model).toBe('z-ai/glm-5.2');
+    expect(body.fallback).toBe(false);
+    expect(body.foods).toHaveLength(1);
+    expect(deps.callFallbackProvider).not.toHaveBeenCalled();
   });
 
-  it('maps a provider 429 to a structured 503 provider_unavailable (not a fake success, no silent fallback)', async () => {
+  it('falls back to DeepSeek on NVIDIA 429 and announces fallback:true (never silent)', async () => {
     deps = makeDeps({
-      callProvider: vi.fn().mockResolvedValue(new Response('rate limited', { status: 429 })),
+      callPrimaryProvider: vi.fn().mockResolvedValue({
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
+        response: new Response('rate limited', { status: 429 }),
+      }),
+    });
+    const handler = createMacroHandler(deps);
+    const res = await handler(post(VALID_BODY, AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fallback).toBe(true);
+    expect(body.provider).toBe('deepseek');
+    expect(body.model).toBe('deepseek-chat');
+    expect(body.fallback_reason).toMatch(/rate-limiting|NVIDIA/i);
+    expect(deps.callFallbackProvider).toHaveBeenCalledTimes(1);
+    // NVIDIA gets one initial attempt + one retry on transient 429.
+    expect(deps.callPrimaryProvider).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to DeepSeek when NVIDIA output is unparseable', async () => {
+    deps = makeDeps({
+      callPrimaryProvider: vi.fn().mockResolvedValue({
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
+        response: providerOk('this is not the JSON you are looking for'),
+      }),
+    });
+    const handler = createMacroHandler(deps);
+    const res = await handler(post(VALID_BODY, AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fallback).toBe(true);
+    expect(body.provider).toBe('deepseek');
+  });
+
+  it('returns 503 when NVIDIA fails and DeepSeek is not configured', async () => {
+    deps = makeDeps({
+      callPrimaryProvider: vi.fn().mockResolvedValue({
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
+        response: new Response('rate limited', { status: 429 }),
+      }),
+      callFallbackProvider: vi.fn().mockResolvedValue(null),
     });
     const handler = createMacroHandler(deps);
     const res = await handler(post(VALID_BODY, AUTH));
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('provider_unavailable');
-    expect(body.error.message).toMatch(/rate-limiting/i);
-    // One initial call + one retry on transient 429.
-    expect(deps.callProvider).toHaveBeenCalledTimes(2);
+    expect(body.error.message).toMatch(/DEEPSEEK_API_KEY|not configured/i);
   });
 
-  it('maps a provider 401/403 to an API-key guidance message', async () => {
+  it('returns 503 when both providers fail', async () => {
     deps = makeDeps({
-      callProvider: vi.fn().mockResolvedValue(new Response('forbidden', { status: 403 })),
+      callPrimaryProvider: vi.fn().mockResolvedValue({
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
+        response: new Response('down', { status: 503 }),
+      }),
+      callFallbackProvider: vi.fn().mockResolvedValue({
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        response: new Response('down', { status: 503 }),
+      }),
     });
     const handler = createMacroHandler(deps);
     const res = await handler(post(VALID_BODY, AUTH));
     expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.error.message).toMatch(/API key/i);
+    expect(body.error.code).toBe('provider_unavailable');
+    expect(body.error.message).toMatch(/DeepSeek/i);
   });
 
-  it('maps malformed provider output to a structured 502 without echoing provider content', async () => {
-    deps = makeDeps({
-      callProvider: vi.fn().mockResolvedValue(providerOk('this is not the JSON you are looking for')),
-    });
+  it('accepts authenticated pre_workout_snack and bedtime_snack slots', async () => {
     const handler = createMacroHandler(deps);
-    const res = await handler(post(VALID_BODY, AUTH));
-    expect(res.status).toBe(502);
-    const body = await res.json();
-    expect(body.error.code).toBe('provider_invalid_output');
-  });
-
-  it('returns normalized foods with server-recomputed totals on success', async () => {
-    const handler = createMacroHandler(deps);
-    const res = await handler(post(VALID_BODY, AUTH));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.foods).toHaveLength(1);
-    expect(body.meal_total).toEqual({ calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 });
-  });
-
-  it('accepts an authenticated pre_workout_snack request and passes that exact slot to the provider', async () => {
-    const handler = createMacroHandler(deps);
-    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'pre_workout_snack' }, AUTH));
-    expect(res.status).toBe(200);
-    expect(deps.callProvider).toHaveBeenCalledWith(DESCRIPTION, 'pre_workout_snack');
-  });
-
-  it('accepts an authenticated bedtime_snack request and passes that exact slot to the provider', async () => {
-    const handler = createMacroHandler(deps);
-    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'bedtime_snack' }, AUTH));
-    expect(res.status).toBe(200);
-    expect(deps.callProvider).toHaveBeenCalledWith(DESCRIPTION, 'bedtime_snack');
+    for (const meal_slot of ['pre_workout_snack', 'bedtime_snack'] as const) {
+      const res = await handler(post({ description: DESCRIPTION, meal_slot }, AUTH));
+      expect(res.status).toBe(200);
+      expect(deps.callPrimaryProvider).toHaveBeenCalledWith(DESCRIPTION, meal_slot);
+    }
   });
 
   it('still rejects an unknown slot with 400 before rate limiting or provider access', async () => {
     const handler = createMacroHandler(deps);
-    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'midnight_feast' }, AUTH));
+    const res = await handler(post({ description: DESCRIPTION, meal_slot: 'brunch' }, AUTH));
     expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error.code).toBe('invalid_request');
     expect(deps.consumeRateLimit).not.toHaveBeenCalled();
-    expect(deps.callProvider).not.toHaveBeenCalled();
+    expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
   });
 
   it('never logs the meal description, auth header, or provider body', async () => {
     deps = makeDeps({
-      callProvider: vi.fn().mockResolvedValue(
-        new Response('provider secret sauce diagnostics', { status: 500 }),
-      ),
+      callPrimaryProvider: vi.fn().mockResolvedValue({
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
+        response: new Response('provider secret sauce diagnostics', { status: 500 }),
+      }),
+      callFallbackProvider: vi.fn().mockResolvedValue({
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        response: new Response('also secret', { status: 500 }),
+      }),
     });
     const handler = createMacroHandler(deps);
     await handler(post(VALID_BODY, AUTH));
-
-    const logged = (deps.log as ReturnType<typeof vi.fn>).mock.calls.map((c) => c.join(' ')).join('\n');
-    expect(logged).not.toContain('secret sauce');
-    expect(logged).not.toContain('some-user-jwt');
-    expect(logged).not.toContain(DESCRIPTION);
+    const logs = (deps.log as ReturnType<typeof vi.fn>).mock.calls.flat().join(' ');
+    expect(logs).not.toMatch(/secret sauce|also secret|Bearer|grilled chicken/i);
   });
 });

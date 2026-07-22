@@ -1,28 +1,34 @@
 // Supabase Edge Function (Deno) — calculate-macros
 //
 // POST { description: string, meal_slot: MealSlot }  (Authorization: user JWT required)
-// → { foods: AIFood[], meal_total: { calories, protein_g, carbs_g, fat_g } }
+// → { foods, meal_total, provider, model, fallback?, fallback_reason? }
 //
-// All request handling lives in handler.ts (unit-tested with Vitest). This
-// file only wires real dependencies:
-//   * verifyUser      — validates the caller's JWT against Supabase Auth
-//   * consumeRateLimit— atomic per-user quota via the consume_macro_calc_quota
-//                       RPC (migration 010); DB-enforced, multi-instance safe
-//   * callProvider    — NVIDIA GLM-5.2 chat completion (key from function env)
+// Provider policy:
+//   1. NVIDIA GLM-5.2 (primary)
+//   2. DeepSeek deepseek-chat / v4-flash (fallback) — ALWAYS announced via
+//      fallback:true + model/provider fields. Never silent.
 //
-// Deploy order: apply migration 010 BEFORE deploying this function (see
-// docs/DEPLOYMENT.md). There is deliberately no fallback provider.
+// Required secrets: NVIDIA_API_KEY, DEEPSEEK_API_KEY
+// (SUPABASE_URL / SUPABASE_ANON_KEY injected automatically)
 
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { createMacroHandler, type MealSlot, type RateLimitDecision } from './handler.ts';
+import {
+  createMacroHandler,
+  type MealSlot,
+  type ProviderAttempt,
+  type RateLimitDecision,
+} from './handler.ts';
 
 const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 const NVIDIA_MODEL = 'z-ai/glm-5.2';
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
+// Cost-effective JSON-friendly chat model already used as Hermes fallback.
+const DEEPSEEK_MODEL = 'deepseek-chat';
 
 const SYSTEM_PROMPT =
-  "You are a nutrition analysis AI. Parse meal descriptions into individual food items with macro estimates. " +
-  "Use standard USDA nutrition data as your reference. Return ONLY valid JSON with no markdown or commentary. " +
-  "For each food, provide the most accurate macronutrient breakdown you can based on standard serving sizes. " +
+  'You are a nutrition analysis AI. Parse meal descriptions into individual food items with macro estimates. ' +
+  'Use standard USDA nutrition data as your reference. Return ONLY valid JSON with no markdown or commentary. ' +
+  'For each food, provide the most accurate macronutrient breakdown you can based on standard serving sizes. ' +
   "Set confidence to 'high' when the food is a well-known branded item with reliable data, 'medium' for common " +
   "whole foods with standard nutrition, and 'low' for unusual items or quantities you're uncertain about. " +
   'Respond with a JSON object of the shape: {"foods": [{"food_name": string, "quantity": number, "unit": string, ' +
@@ -61,14 +67,45 @@ async function consumeRateLimit(_userId: string, authHeader: string): Promise<Ra
   return data as RateLimitDecision;
 }
 
-function callProvider(description: string, mealSlot: MealSlot): Promise<Response> {
+function chatCompletion(
+  url: string,
+  apiKey: string,
+  model: string,
+  description: string,
+  mealSlot: MealSlot,
+): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: `Meal slot: ${mealSlot}\nMeal description: ${description}` },
+      ],
+      temperature: 0.1,
+      max_tokens: 2048,
+      stream: false,
+      // Encourage pure JSON from models that support it (DeepSeek / OpenAI-compatible).
+      response_format: { type: 'json_object' },
+    }),
+  });
+}
+
+async function callPrimaryProvider(description: string, mealSlot: MealSlot): Promise<ProviderAttempt> {
   const apiKey = Deno.env.get('NVIDIA_API_KEY');
   if (!apiKey) {
-    return Promise.resolve(new Response('provider key not configured', { status: 500 }));
+    return {
+      provider: 'nvidia',
+      model: NVIDIA_MODEL,
+      response: new Response('provider key not configured', { status: 500 }),
+    };
   }
-  // Prefer a short, non-thinking JSON answer — long reasoning models often trip
-  // free-tier latency / empty-content failures on nutrition parse jobs.
-  return fetch(NVIDIA_API_URL, {
+  // NVIDIA integrate API may reject response_format — use a plain body.
+  const response = await fetch(NVIDIA_API_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -85,12 +122,30 @@ function callProvider(description: string, mealSlot: MealSlot): Promise<Response
       stream: false,
     }),
   });
+  return { provider: 'nvidia', model: NVIDIA_MODEL, response };
+}
+
+async function callFallbackProvider(
+  description: string,
+  mealSlot: MealSlot,
+): Promise<ProviderAttempt | null> {
+  const apiKey = Deno.env.get('DEEPSEEK_API_KEY');
+  if (!apiKey) return null;
+  const response = await chatCompletion(
+    DEEPSEEK_API_URL,
+    apiKey,
+    DEEPSEEK_MODEL,
+    description,
+    mealSlot,
+  );
+  return { provider: 'deepseek', model: DEEPSEEK_MODEL, response };
 }
 
 const handler = createMacroHandler({
   verifyUser,
   consumeRateLimit,
-  callProvider,
+  callPrimaryProvider,
+  callFallbackProvider,
   log: (...parts: string[]) => console.error(...parts),
 });
 

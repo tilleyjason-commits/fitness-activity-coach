@@ -161,4 +161,36 @@ describe('MealCard manual entry when AI is unavailable', () => {
     await user.click(screen.getByRole('button', { name: /try again/i }));
     expect(screen.getByDisplayValue('Apple')).toBeInTheDocument();
   });
+
+  it('shows a visible notice when the AI response used DeepSeek fallback', async () => {
+    const user = userEvent.setup();
+    const fallbackResult: MacrosFromAI = {
+      foods: [
+        {
+          food_name: 'Banana',
+          quantity: 1,
+          unit: 'medium',
+          calories: 105,
+          protein_g: 1.3,
+          carbs_g: 27,
+          fat_g: 0.4,
+          confidence: 'high',
+        },
+      ],
+      meal_total: { calories: 105, protein_g: 1.3, carbs_g: 27, fat_g: 0.4 },
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      fallback: true,
+      fallback_reason: 'NVIDIA is rate-limiting requests.',
+    };
+    onCalculate.mockResolvedValueOnce(fallbackResult);
+    renderCard();
+
+    await user.type(screen.getByLabelText(/lunch description/i), 'one banana');
+    await user.click(screen.getByRole('button', { name: /calculate with ai/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/Fallback model active/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/deepseek-chat/i);
+    expect(screen.getByDisplayValue('Banana')).toBeInTheDocument();
+  });
 });

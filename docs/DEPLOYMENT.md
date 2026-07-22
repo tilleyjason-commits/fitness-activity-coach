@@ -21,7 +21,11 @@ Ship in this order — each step depends on the previous one being live:
 2. **Edge Function**: `supabase functions deploy calculate-macros`.
    The function *fails closed* if `consume_macro_calc_quota()` is missing, so the
    migration must be applied first. Required function secrets: `NVIDIA_API_KEY`
-   (`SUPABASE_URL`/`SUPABASE_ANON_KEY` are injected automatically).
+   (primary) and `DEEPSEEK_API_KEY` (fallback). `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+   are injected automatically.
+   Provider policy: **NVIDIA first**, then **DeepSeek** if NVIDIA fails. Success
+   responses always include `provider`, `model`, and `fallback` (true when DeepSeek
+   served). Fallback is never silent — the UI shows a status banner.
    The function must also be **redeployed before the 014 frontend**: its
    request allowlist must recognize `pre_workout_snack`/`bedtime_snack` before
    users can calculate those meals with AI. Separately, migration 014 must be
@@ -55,8 +59,9 @@ frontend or Edge Function change needed.
 | 502 | `provider_invalid_output` | Model output unparseable |
 | 500 | `internal` | Unexpected fault only |
 
-There is intentionally **no silent fallback provider**; any future fallback must
-be user-visible.
+Fallback provider is **DeepSeek** after NVIDIA. It is never silent: 200 bodies
+include `fallback: true` plus `provider`/`model`, and the MealCard shows a status
+banner. Both providers failing still surfaces a structured 503.
 
 ## CI / smoke tests
 

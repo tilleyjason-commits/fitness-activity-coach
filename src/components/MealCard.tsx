@@ -119,6 +119,8 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
   const [drafts, setDrafts] = useState<FoodDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Visible notice when DeepSeek served after NVIDIA failed — never silent. */
+  const [providerNotice, setProviderNotice] = useState<string | null>(null);
 
   // Re-sync only when the underlying row appears/disappears, so in-progress
   // edits on other cards survive parent reloads.
@@ -134,6 +136,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
       setState('idle');
     }
     setError(null);
+    setProviderNotice(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mealLog?.id]);
 
@@ -142,9 +145,19 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
     if (!trimmed) return;
     setState('calculating');
     setError(null);
+    setProviderNotice(null);
     try {
       const result = await onCalculate(trimmed, slot);
       setDrafts(result.foods.map(aiToDraft));
+      if (result.fallback) {
+        const model = result.model ?? 'DeepSeek';
+        const reason = result.fallback_reason ? ` (${result.fallback_reason})` : '';
+        setProviderNotice(
+          `Fallback model active: ${model}${reason}. NVIDIA was unavailable; results came from DeepSeek instead.`,
+        );
+      } else {
+        setProviderNotice(null);
+      }
       setState('results');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Macro calculation failed');
@@ -225,26 +238,35 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
   return (
     <section className="card mb-4" aria-label={MEAL_SLOT_LABELS[slot]}>
       <header className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span aria-hidden className="text-lg">
-            {MEAL_SLOT_ICONS[slot]}
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</h2>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500">
-              {MEAL_SLOT_TIMES[slot].hint}
-            </p>
-          </div>
-        </div>
-        <input
-          type="time"
-          value={mealTime}
-          onChange={(e) => setMealTime(e.target.value)}
-          disabled={busy || state === 'saved'}
-          aria-label={`${MEAL_SLOT_LABELS[slot]} time`}
-          className="field w-auto px-2 py-1.5 text-sm"
-        />
-      </header>
+              <div className="flex items-center gap-2">
+                <span aria-hidden className="text-lg">
+                  {MEAL_SLOT_ICONS[slot]}
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</h2>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {MEAL_SLOT_TIMES[slot].hint}
+                  </p>
+                </div>
+              </div>
+              <input
+                type="time"
+                value={mealTime}
+                onChange={(e) => setMealTime(e.target.value)}
+                disabled={busy || state === 'saved'}
+                aria-label={`${MEAL_SLOT_LABELS[slot]} time`}
+                className="field w-auto px-2 py-1.5 text-sm"
+              />
+            </header>
+
+            {providerNotice && (
+              <p
+                role="status"
+                className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+              >
+                {providerNotice}
+              </p>
+            )}
 
       {state === 'saved' && mealLog ? (
         <>
