@@ -37,24 +37,20 @@ const SAMPLE_FOODS = {
   meal_total: { calories: 165, protein_g: 31, carbs_g: 0, fat_g: 3.6 },
 };
 
-function nvidiaOk(): ProviderAttempt {
-  return { provider: 'nvidia', model: 'z-ai/glm-5.2', response: providerOk(SAMPLE_FOODS) };
+function openrouterOk(): ProviderAttempt {
+  return { provider: 'openrouter', model: 'openai/gpt-4o-mini', response: providerOk(SAMPLE_FOODS) };
 }
 
-function deepseekOk(): ProviderAttempt {
-  return {
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-    response: providerOk(SAMPLE_FOODS),
-  };
+function nvidiaOk(): ProviderAttempt {
+  return { provider: 'nvidia', model: 'z-ai/glm-5.2', response: providerOk(SAMPLE_FOODS) };
 }
 
 function makeDeps(overrides: Partial<MacroHandlerDeps> = {}): MacroHandlerDeps {
   return {
     verifyUser: vi.fn().mockResolvedValue('user-1'),
     consumeRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
-    callPrimaryProvider: vi.fn().mockResolvedValue(nvidiaOk()),
-    callFallbackProvider: vi.fn().mockResolvedValue(deepseekOk()),
+    callPrimaryProvider: vi.fn().mockResolvedValue(openrouterOk()),
+    callFallbackProvider: vi.fn().mockResolvedValue(nvidiaOk()),
     log: vi.fn(),
     ...overrides,
   };
@@ -120,23 +116,23 @@ describe('calculate-macros handler', () => {
     expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
   });
 
-  it('returns NVIDIA success without calling DeepSeek and sets fallback:false', async () => {
+  it('returns OpenRouter success without calling the fallback and sets fallback:false', async () => {
     const handler = createMacroHandler(deps);
     const res = await handler(post(VALID_BODY, AUTH));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.provider).toBe('nvidia');
-    expect(body.model).toBe('z-ai/glm-5.2');
+    expect(body.provider).toBe('openrouter');
+    expect(body.model).toBe('openai/gpt-4o-mini');
     expect(body.fallback).toBe(false);
     expect(body.foods).toHaveLength(1);
     expect(deps.callFallbackProvider).not.toHaveBeenCalled();
   });
 
-  it('falls back to DeepSeek on NVIDIA 429 and announces fallback:true (never silent)', async () => {
+  it('falls back to NVIDIA on OpenRouter 429 and announces fallback:true (never silent)', async () => {
     deps = makeDeps({
       callPrimaryProvider: vi.fn().mockResolvedValue({
-        provider: 'nvidia',
-        model: 'z-ai/glm-5.2',
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini',
         response: new Response('rate limited', { status: 429 }),
       }),
     });
@@ -145,19 +141,19 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fallback).toBe(true);
-    expect(body.provider).toBe('deepseek');
-    expect(body.model).toBe('deepseek-chat');
-    expect(body.fallback_reason).toMatch(/rate-limiting|NVIDIA/i);
+    expect(body.provider).toBe('nvidia');
+    expect(body.model).toBe('z-ai/glm-5.2');
+    expect(body.fallback_reason).toMatch(/rate-limiting|OpenRouter/i);
     expect(deps.callFallbackProvider).toHaveBeenCalledTimes(1);
     // NVIDIA gets one initial attempt + one retry on transient 429.
     expect(deps.callPrimaryProvider).toHaveBeenCalledTimes(2);
   });
 
-  it('falls back to DeepSeek when NVIDIA output is unparseable', async () => {
+  it('falls back to NVIDIA when OpenRouter output is unparseable', async () => {
     deps = makeDeps({
       callPrimaryProvider: vi.fn().mockResolvedValue({
-        provider: 'nvidia',
-        model: 'z-ai/glm-5.2',
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini',
         response: providerOk('this is not the JSON you are looking for'),
       }),
     });
@@ -166,14 +162,14 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.fallback).toBe(true);
-    expect(body.provider).toBe('deepseek');
+    expect(body.provider).toBe('nvidia');
   });
 
-  it('returns 503 when NVIDIA fails and DeepSeek is not configured', async () => {
+  it('returns 503 when OpenRouter fails and NVIDIA is not configured', async () => {
     deps = makeDeps({
       callPrimaryProvider: vi.fn().mockResolvedValue({
-        provider: 'nvidia',
-        model: 'z-ai/glm-5.2',
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini',
         response: new Response('rate limited', { status: 429 }),
       }),
       callFallbackProvider: vi.fn().mockResolvedValue(null),
@@ -183,19 +179,19 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('provider_unavailable');
-    expect(body.error.message).toMatch(/DEEPSEEK_API_KEY|not configured/i);
+    expect(body.error.message).toMatch(/NVIDIA|not configured/i);
   });
 
   it('returns 503 when both providers fail', async () => {
     deps = makeDeps({
       callPrimaryProvider: vi.fn().mockResolvedValue({
-        provider: 'nvidia',
-        model: 'z-ai/glm-5.2',
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini',
         response: new Response('down', { status: 503 }),
       }),
       callFallbackProvider: vi.fn().mockResolvedValue({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
         response: new Response('down', { status: 503 }),
       }),
     });
@@ -204,7 +200,7 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('provider_unavailable');
-    expect(body.error.message).toMatch(/DeepSeek/i);
+    expect(body.error.message).toMatch(/NVIDIA/i);
   });
 
   it('accepts authenticated pre_workout_snack and bedtime_snack slots', async () => {
@@ -227,13 +223,13 @@ describe('calculate-macros handler', () => {
   it('never logs the meal description, auth header, or provider body', async () => {
     deps = makeDeps({
       callPrimaryProvider: vi.fn().mockResolvedValue({
-        provider: 'nvidia',
-        model: 'z-ai/glm-5.2',
+        provider: 'openrouter',
+        model: 'openai/gpt-4o-mini',
         response: new Response('provider secret sauce diagnostics', { status: 500 }),
       }),
       callFallbackProvider: vi.fn().mockResolvedValue({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: 'nvidia',
+        model: 'z-ai/glm-5.2',
         response: new Response('also secret', { status: 500 }),
       }),
     });
