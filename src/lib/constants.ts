@@ -87,13 +87,16 @@ export function resolveTargets(profile: Profile | null | undefined): MacroTarget
 
   let calories = DEFAULT_TARGETS.calories;
   if (weight && goalWeight) {
-    // Mild deficit when above goal, maintenance near goal, mild surplus below.
+    // Recomposition deficit: ~200-300 cal/day max (Helms MASS V10I7).
+    // Maintenance estimate ~12 cal/lb, deficit capped at 250, scaled at
+    // 8 cal/lb of gap so large gaps don't push below the 2000 floor.
     const deltaLb = weight - goalWeight;
     calories = Math.round(
-      Math.min(3200, Math.max(1800, 10 * weight - Math.sign(deltaLb) * Math.min(400, Math.abs(deltaLb) * 12))),
+      Math.min(3200, Math.max(2000, 12 * weight - Math.sign(deltaLb) * Math.min(250, Math.abs(deltaLb) * 8))),
     );
   } else if (weight) {
-    calories = Math.round(Math.min(3200, Math.max(1800, weight * 12)));
+    // No goal weight: maintenance-ish, not a deficit.
+    calories = Math.round(Math.min(3200, Math.max(2000, weight * 13)));
   }
 
   const fatG = weight
