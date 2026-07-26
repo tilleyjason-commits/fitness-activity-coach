@@ -30,6 +30,7 @@ const db = {
   getExerciseLogs: vi.fn(),
   getRecommendationsBetween: vi.fn(),
   getRecentWeighIns: vi.fn(),
+  getProfile: vi.fn(),
   upsertWeeklySummary: vi.fn(),
   dismissRecommendation: vi.fn(),
 };
@@ -38,6 +39,7 @@ vi.mock('~/lib/db', () => ({
   getExerciseLogs: (...a: unknown[]) => db.getExerciseLogs(...a),
   getRecommendationsBetween: (...a: unknown[]) => db.getRecommendationsBetween(...a),
   getRecentWeighIns: (...a: unknown[]) => db.getRecentWeighIns(...a),
+  getProfile: (...a: unknown[]) => db.getProfile(...a),
   upsertWeeklySummary: (...a: unknown[]) => db.upsertWeeklySummary(...a),
   dismissRecommendation: (...a: unknown[]) => db.dismissRecommendation(...a),
 }));
@@ -61,6 +63,7 @@ beforeEach(() => {
   db.getExerciseLogs.mockResolvedValue([]);
   db.getRecommendationsBetween.mockResolvedValue([]);
   db.getRecentWeighIns.mockResolvedValue([]);
+  db.getProfile.mockResolvedValue(null);
   db.upsertWeeklySummary.mockResolvedValue(undefined);
 });
 

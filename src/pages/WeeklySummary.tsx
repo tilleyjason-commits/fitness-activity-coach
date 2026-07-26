@@ -8,6 +8,7 @@ import {
   Cell,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,10 +19,19 @@ import {
   dismissRecommendation,
   getExerciseLogs,
   getLogsBetween,
-  getRecentWeighIns,
+  getProfile,
   getRecommendationsBetween,
   upsertWeeklySummary,
 } from '~/lib/db';
+import {
+  RANGE_WEEKS,
+  bucketWeeks,
+  computeLoggingStreak,
+  daysLoggedInRange,
+  rangeStart,
+  type RangeWeeks,
+  type WeekBucket,
+} from '~/lib/trends';
 import {
   computeAreaScores,
   computeWeeklyDerived,
@@ -30,10 +40,11 @@ import {
   type AreaScore,
   type WeeklyDerived,
 } from '~/lib/evaluate';
-import { CHART } from '~/lib/constants';
-import { SEVERITY_ORDER, type DailyLog, type Recommendation } from '~/lib/types';
+import { CHART, resolveTargets } from '~/lib/constants';
+import { SEVERITY_ORDER, type DailyLog, type Profile, type Recommendation } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { RecommendationCard } from '~/components/RecommendationCard';
+import { SkeletonCard } from '~/components/Skeleton';
 import { useIsDark } from '~/hooks/useIsDark';
 
 const WEAKEST_BAR_COLOR = '#f59e0b'; // amber-500 — flags the weakest domain
@@ -67,7 +78,12 @@ export default function WeeklySummary() {
   const [areas, setAreas] = useState<AreaScore[]>([]);
   const [weekly, setWeekly] = useState<WeeklyDerived | null>(null);
   const [recs, setRecs] = useState<Recommendation[]>([]);
-  const [weighIns, setWeighIns] = useState<DailyLog[]>([]);
+
+  // Trend zone: its own multi-week range, independent of the week pager below.
+  const [rangeWeeks, setRangeWeeks] = useState<RangeWeeks>(4);
+  const [rangeLogs, setRangeLogs] = useState<DailyLog[]>([]);
+  const [buckets, setBuckets] = useState<WeekBucket[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   // 0 = the current Monday–Sunday window; positive values page back in time.
   const [weekOffset, setWeekOffset] = useState(0);
@@ -86,11 +102,10 @@ export default function WeeklySummary() {
         const prevStart = format(subDays(weekStartDate, 7), 'yyyy-MM-dd');
         const prevEnd = format(subDays(weekStartDate, 1), 'yyyy-MM-dd');
 
-        const [logs, prevLogs, weekRecs, recentWeighIns] = await Promise.all([
+        const [logs, prevLogs, weekRecs] = await Promise.all([
           getLogsBetween(userId, weekStart, weekEnd),
           getLogsBetween(userId, prevStart, prevEnd),
           getRecommendationsBetween(userId, weekStart, weekEnd),
-          getRecentWeighIns(userId, 12),
         ]);
         const [exercises, prevExercises] = await Promise.all([
           getExerciseLogs(logs.map((l) => l.id)),
@@ -104,7 +119,6 @@ export default function WeeklySummary() {
         setAreas(areaScores);
         setWeekly(derived);
         setRecs(activeWeekRecs(weekRecs));
-        setWeighIns(recentWeighIns);
 
         // Keep the weekly_summaries table in sync with what this page computed.
         if (logs.length > 0) {
@@ -151,6 +165,71 @@ export default function WeeklySummary() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, weekStart]);
 
+  // Trend range loads independently so changing it never refetches the week
+  // detail below (and vice versa).
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const userId = user.id;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const start = rangeStart(today, rangeWeeks);
+
+    async function loadRange() {
+      try {
+        const logs = await getLogsBetween(userId, start, today);
+        const exercises = await getExerciseLogs(logs.map((log) => log.id));
+        if (!active) return;
+        setRangeLogs(logs);
+        setBuckets(bucketWeeks(logs, exercises, today, rangeWeeks));
+      } catch {
+        // Trends are supplementary; the week detail still renders.
+        if (active) {
+          setRangeLogs([]);
+          setBuckets([]);
+        }
+      }
+    }
+
+    void loadRange();
+    getProfile(userId)
+      .then((data) => active && setProfile(data))
+      .catch(() => active && setProfile(null));
+    return () => {
+      active = false;
+    };
+  }, [user, rangeWeeks]);
+
+  const targets = resolveTargets(profile);
+  const streak = useMemo(
+    () => computeLoggingStreak(rangeLogs, format(new Date(), 'yyyy-MM-dd')),
+    [rangeLogs],
+  );
+  const loggedDays = useMemo(() => daysLoggedInRange(rangeLogs), [rangeLogs]);
+
+  const macroTrend = useMemo(
+    () =>
+      buckets.map((bucket) => ({
+        label: bucket.label,
+        calories: bucket.caloriesAvg,
+        protein: bucket.proteinAvg,
+      })),
+    [buckets],
+  );
+
+  const volumeTrend = useMemo(
+    () =>
+      buckets.map((bucket) => ({
+        label: bucket.label,
+        sets: bucket.sets,
+        volumeLb: bucket.volumeLb,
+        trainingDays: bucket.trainingDays,
+      })),
+    [buckets],
+  );
+
+  const hasMacroTrend = macroTrend.some((point) => point.calories !== null);
+  const hasVolumeTrend = volumeTrend.some((point) => point.sets > 0);
+
   const chartData = useMemo(
     () =>
       areas.map((area) => ({
@@ -162,16 +241,17 @@ export default function WeeklySummary() {
     [areas, weekly],
   );
 
+  // Body composition follows the trend range, not the paged week.
   const weightTrend = useMemo(
     () =>
-      weighIns
+      rangeLogs
         .filter((l) => l.weekly_weight_lb !== null)
         .map((l) => ({
           date: format(new Date(`${l.log_date}T00:00:00`), 'M/d'),
           weight: l.weekly_weight_lb as number,
           waist: l.weekly_waist_inches,
         })),
-    [weighIns],
+    [rangeLogs],
   );
 
   const priority = weekly ? weeklyPriorityMessage(weekly) : null;
@@ -223,14 +303,229 @@ export default function WeeklySummary() {
     </div>
   );
 
+  const rangePicker = (
+    <div
+      className="mb-4 flex gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700/60 dark:bg-slate-800"
+      role="group"
+      aria-label="Trend range"
+    >
+      {RANGE_WEEKS.map((weeks) => (
+        <button
+          key={weeks}
+          type="button"
+          onClick={() => setRangeWeeks(weeks)}
+          aria-pressed={rangeWeeks === weeks}
+          className={`min-h-11 flex-1 rounded-lg text-sm font-semibold transition-colors ${
+            rangeWeeks === weeks
+              ? 'bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900'
+              : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700'
+          }`}
+        >
+          {weeks} weeks
+        </button>
+      ))}
+    </div>
+  );
+
+  const trendZone = (
+    <>
+      {rangePicker}
+
+      <section className="card mb-4" aria-label="Consistency">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="text-stat-sm font-bold tabular-nums">
+              {streak}
+              <span className="ml-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                day{streak === 1 ? '' : 's'}
+              </span>
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Current streak</p>
+          </div>
+          <div>
+            <p className="text-stat-sm font-bold tabular-nums">{loggedDays}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Days logged in {rangeWeeks} weeks
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {weightTrend.length >= 2 && (
+        <section className="card mb-4" aria-label="Weight trend">
+          <h2 className="section-title">Weight</h2>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={weightTrend} margin={{ top: 6, right: 4, bottom: 0, left: -18 }}>
+                <XAxis
+                  dataKey="date"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
+                />
+                <YAxis
+                  domain={['dataMin - 2', 'dataMax + 2']}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
+                  tickFormatter={(v: number) => `${Math.round(v)}`}
+                />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  labelStyle={{ color: CHART.textMuted }}
+                  itemStyle={{ color: isDark ? '#f1f5f9' : '#0f172a' }}
+                  formatter={(value: number) => [`${value} lb`, 'Weight']}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="weight"
+                  stroke={CHART.primary}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {weightTrend.some((point) => point.waist !== null) && (
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Latest waist:{' '}
+              {[...weightTrend].reverse().find((point) => point.waist !== null)?.waist} in
+            </p>
+          )}
+        </section>
+      )}
+
+      {hasMacroTrend && (
+        <section className="card mb-4" aria-label="Macro adherence trend">
+          <div className="mb-1 flex items-baseline justify-between">
+            <h2 className="section-title mb-0">Macro adherence</h2>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Target {targets.calories.toLocaleString()} kcal · {targets.proteinG}g
+            </span>
+          </div>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={macroTrend} margin={{ top: 6, right: 4, bottom: 0, left: -22 }}>
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
+                />
+                <YAxis
+                  yAxisId="cal"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
+                  domain={['dataMin - 200', 'dataMax + 200']}
+                />
+                <YAxis yAxisId="pro" hide domain={['dataMin - 40', 'dataMax + 40']} />
+                <Tooltip
+                  contentStyle={tooltipStyle}
+                  labelStyle={{ color: CHART.textMuted }}
+                  itemStyle={{ color: isDark ? '#f1f5f9' : '#0f172a' }}
+                  formatter={(value: number, name: string) => [
+                    name === 'calories' ? `${value} kcal` : `${value} g`,
+                    name === 'calories' ? 'Calories avg' : 'Protein avg',
+                  ]}
+                />
+                <ReferenceLine
+                  yAxisId="cal"
+                  y={targets.calories}
+                  stroke={CHART.textMuted}
+                  strokeDasharray="4 4"
+                />
+                <Line
+                  yAxisId="cal"
+                  type="monotone"
+                  dataKey="calories"
+                  stroke={CHART.primary}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  connectNulls
+                />
+                <Line
+                  yAxisId="pro"
+                  type="monotone"
+                  dataKey="protein"
+                  stroke={CHART.secondary}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  connectNulls
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-2 flex gap-4 text-xs text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: CHART.primary }} />
+              Calories
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: CHART.secondary }} />
+              Protein
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-px w-4" style={{ background: CHART.textMuted }} />
+              Calorie target
+            </span>
+          </div>
+        </section>
+      )}
+
+      {hasVolumeTrend && (
+        <section className="card mb-4" aria-label="Training volume trend">
+          <h2 className="section-title">Training volume</h2>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={volumeTrend} margin={{ top: 6, right: 4, bottom: 0, left: -22 }}>
+                <XAxis
+                  dataKey="label"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
+                />
+                <Tooltip
+                  cursor={{ fill: isDark ? '#33415555' : '#e2e8f055' }}
+                  contentStyle={tooltipStyle}
+                  labelStyle={{ color: CHART.textMuted }}
+                  itemStyle={{ color: isDark ? '#f1f5f9' : '#0f172a' }}
+                  formatter={(value: number, _name, entry) => [
+                    `${value} sets · ${entry.payload.volumeLb.toLocaleString()} lb · ${
+                      entry.payload.trainingDays
+                    } session${entry.payload.trainingDays === 1 ? '' : 's'}`,
+                    'Week',
+                  ]}
+                />
+                <Bar dataKey="sets" fill={CHART.primary} radius={[6, 6, 0, 0]} maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Completed sets per week. Tap a bar for tonnage and sessions.
+          </p>
+        </section>
+      )}
+    </>
+  );
+
   if (loading) {
     return (
       <div>
         <PageHeader title="Progress" />
+        {trendZone}
+        <h2 className="section-title">Week detail</h2>
         {weekPager}
-        <div className="card animate-pulse text-sm text-slate-500 dark:text-slate-400">
-          Crunching the week&apos;s numbers…
-        </div>
+        <SkeletonCard
+          label="Crunching the week's numbers"
+          lines={['w-1/3', 'w-full', 'w-full', 'w-2/3']}
+        />
       </div>
     );
   }
@@ -238,6 +533,9 @@ export default function WeeklySummary() {
   return (
     <div>
       <PageHeader title="Progress" />
+      {trendZone}
+
+      <h2 className="section-title">Week detail</h2>
       {weekPager}
 
       {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
@@ -363,55 +661,6 @@ export default function WeeklySummary() {
               </section>
             )}
         </>
-      )}
-
-      {/* Body composition reads as one block: change vs last week, then trend. */}
-      {weightTrend.length >= 2 && (
-        <section className="card mb-4" aria-label="Weight trend">
-          <h2 className="section-title">Weight trend</h2>
-          <div className="h-36">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weightTrend} margin={{ top: 6, right: 4, bottom: 0, left: -18 }}>
-                <XAxis
-                  dataKey="date"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
-                />
-                <YAxis
-                  domain={['dataMin - 2', 'dataMax + 2']}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fill: CHART.textMuted, fontSize: 11 }}
-                  tickFormatter={(v: number) => `${Math.round(v)}`}
-                />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  labelStyle={{ color: CHART.textMuted }}
-                  itemStyle={{ color: isDark ? '#f1f5f9' : '#0f172a' }}
-                  formatter={(value: number, name: string) => [
-                    name === 'weight' ? `${value} lb` : `${value} in`,
-                    name === 'weight' ? 'Weight' : 'Waist',
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="weight"
-                  stroke={CHART.primary}
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          {weightTrend.some((point) => point.waist !== null) && (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              Latest waist:{' '}
-              {[...weightTrend].reverse().find((point) => point.waist !== null)?.waist} in
-            </p>
-          )}
-        </section>
       )}
 
       <section className="mb-4" aria-label="This week's recommendations">
