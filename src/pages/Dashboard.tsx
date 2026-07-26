@@ -201,6 +201,8 @@ function TodayWorkoutCard({ today }: { today: TodayWorkout }) {
 
 interface MacroReadingProps {
   label: string;
+  /** Optional explicit caption when a target has an acceptable buffer range. */
+  caption?: string;
   /** Remaining amount; negative means the target is already exceeded. */
   left: number;
   consumed: number;
@@ -225,6 +227,7 @@ const TONE_BAR: Record<MacroReadingProps['tone'], string> = {
 
 function MacroReading({
   label,
+  caption,
   left,
   consumed,
   target,
@@ -236,7 +239,7 @@ function MacroReading({
   return (
     <div className={align === 'right' ? 'text-right' : ''}>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        {over ? `${label} over` : `${label} left`}
+        {caption ?? (over ? `${label} over` : `${label} left`)}
       </p>
       <p className={`text-stat font-bold tabular-nums ${TONE_TEXT[tone]}`}>
         {Math.abs(Math.round(left)).toLocaleString()}
@@ -291,6 +294,13 @@ function MacroHero({ log, targets }: { log: DailyLog | null; targets: MacroTarge
       <div className="mb-3 flex items-start justify-between gap-4">
         <MacroReading
           label="Calories"
+          caption={
+            calories > targets.caloriesMax
+              ? 'Calories over range'
+              : calories > targets.calories
+                ? 'Calories above target · in range'
+                : 'Calories left'
+          }
           left={caloriesLeft}
           consumed={calories}
           target={targets.calories}

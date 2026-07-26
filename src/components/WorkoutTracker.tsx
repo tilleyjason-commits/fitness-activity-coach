@@ -169,7 +169,7 @@ export function WorkoutTracker({
                   aria-label={`Remove ${we.exercise.name}`}
                   className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Trash2 className="h-4 w-4" aria-hidden />
                 </button>
               </div>
             </div>
@@ -276,7 +276,7 @@ export function WorkoutTracker({
                 aria-label={`Remove ${cardioExercise.equipment.name}`}
                 className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-4 w-4" aria-hidden />
               </button>
             </div>
           </div>
@@ -303,7 +303,7 @@ export function WorkoutTracker({
                 aria-label="Close"
                 className="-m-2 flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden />
               </button>
             </div>
 
@@ -317,7 +317,7 @@ export function WorkoutTracker({
                     onClick={() => setReps((v) => Math.max(0, v - 1))}
                     className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
-                    <Minus className="h-4 w-4" />
+                    <Minus className="h-4 w-4" aria-hidden />
                   </button>
                   <span className="text-sm font-semibold tabular-nums">{reps}</span>
                   <button
@@ -326,7 +326,7 @@ export function WorkoutTracker({
                     onClick={() => setReps((v) => Math.min(100, v + 1))}
                     className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-4 w-4" aria-hidden />
                   </button>
                 </div>
               </div>
@@ -354,7 +354,7 @@ export function WorkoutTracker({
                     onClick={() => setRir((v) => Math.max(0, v - 1))}
                     className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
-                    <Minus className="h-4 w-4" />
+                    <Minus className="h-4 w-4" aria-hidden />
                   </button>
                   <span className="text-sm font-semibold tabular-nums">{rir}</span>
                   <button
@@ -363,7 +363,7 @@ export function WorkoutTracker({
                     onClick={() => setRir((v) => Math.min(MAX_RIR, v + 1))}
                     className="flex min-h-11 min-w-11 items-center justify-center text-slate-500 transition-colors hover:text-emerald-500 dark:text-slate-400"
                   >
-                    <Plus className="h-4 w-4" />
+                    <Plus className="h-4 w-4" aria-hidden />
                   </button>
                 </div>
               </div>

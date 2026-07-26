@@ -272,6 +272,19 @@ describe('macro hero', () => {
     expect(within(hero).getByText('400')).toBeInTheDocument();
   });
 
+  it('labels calories above target but still inside the acceptable band consistently', () => {
+    dailyLogState.log = {
+      daily_calories: 2550,
+      daily_protein_g: 200,
+    } as unknown as DailyLog;
+    renderDashboard();
+
+    const hero = screen.getByRole('link', { name: /today's macros/i });
+    expect(within(hero).getByText(/calories above target · in range/i)).toBeInTheDocument();
+    const bar = within(hero).getByRole('progressbar', { name: 'Calories logged' });
+    expect(bar.firstElementChild).toHaveClass('bg-emerald-500');
+  });
+
   it('shows the full target as remaining before anything is logged', () => {
     renderDashboard();
 
