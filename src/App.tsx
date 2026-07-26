@@ -70,10 +70,14 @@ function AuthGuard() {
   if (profileState === null || profileState.userId !== user.id) return <LoadingScreen />;
   if (!profileState.ready) return <Navigate to="/setup" replace />;
 
+  // Phone: single column with the tab bar fixed to the bottom. Desktop (md+):
+  // the same column, centred beside a sticky nav rail.
   return (
-    <div className="mx-auto min-h-screen w-full max-w-md px-4 pb-28 pt-6">
-      <Outlet />
+    <div className="mx-auto flex min-h-screen w-full max-w-4xl">
       <NavBar />
+      <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 md:pb-10 md:pt-8">
+        <Outlet />
+      </main>
     </div>
   );
 }

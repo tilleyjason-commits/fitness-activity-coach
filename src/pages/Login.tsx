@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
-import { AlertTriangle, Dumbbell, Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
+import { Logo } from '~/components/Logo';
 import { isSupabaseConfigured } from '~/lib/supabase';
 
 type Mode = 'signin' | 'signup';
@@ -43,11 +44,9 @@ export default function Login() {
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-6 py-10">
       <div className="mb-8 flex flex-col items-center gap-3 text-center">
-        <span className="rounded-2xl bg-emerald-500/15 p-4">
-          <Dumbbell className="h-9 w-9 text-emerald-500" aria-hidden />
-        </span>
+        <Logo size={64} />
         <div>
-          <h1 className="text-2xl font-bold">Fitness Activity Coach</h1>
+          <h1 className="text-display font-bold">Fitness Activity Coach</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Daily logging, evidence-based coaching.
           </p>

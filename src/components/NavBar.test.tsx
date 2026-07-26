@@ -54,3 +54,35 @@ describe('NavBar tab ownership', () => {
     expect(activeTab()).toBe('Log');
   });
 });
+
+describe('responsive shape', () => {
+  it('is a fixed bottom bar on phones and a sticky rail from md up', () => {
+    const { container } = renderAt('/');
+    const nav = container.querySelector('nav');
+
+    expect(nav?.className).toMatch(/fixed/);
+    expect(nav?.className).toMatch(/bottom-0/);
+    expect(nav?.className).toMatch(/md:sticky/);
+    expect(nav?.className).toMatch(/md:w-56/);
+    expect(nav?.className).toMatch(/md:border-r/);
+  });
+
+  it('carries the app mark, shown only in the desktop rail', () => {
+    renderAt('/');
+    const mark = screen.getByRole('img', { name: 'Fitness Activity Coach' });
+
+    expect(mark).toBeInTheDocument();
+    expect(mark.closest('div')?.className).toMatch(/hidden md:flex/);
+  });
+
+  it('keeps the tab labels identical in both shapes', () => {
+    renderAt('/');
+    expect(screen.getAllByRole('link').map((l) => l.textContent)).toEqual([
+      'Home',
+      'Workout',
+      'Log',
+      'Progress',
+      'More',
+    ]);
+  });
+});

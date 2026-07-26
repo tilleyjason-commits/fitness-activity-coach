@@ -22,7 +22,7 @@ export function PageHeader({ title, subtitle, backTo }: PageHeaderProps) {
         </Link>
       )}
       <div>
-        <h1 className="text-xl font-bold">{title}</h1>
+        <h1 className="text-display-sm font-bold">{title}</h1>
         {subtitle && <p className="text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
       </div>
     </header>
