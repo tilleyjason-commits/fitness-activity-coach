@@ -74,6 +74,68 @@ export function updateSetRecord(
   };
 }
 
+/**
+ * Set only the reps-in-reserve for one set, preserving its completed flag.
+ * RIR is judged per set at the moment it ends, so it stays editable both
+ * before a set is completed and after — unlike updateSetRecord, this never
+ * marks a set done as a side effect.
+ */
+export function setSetRir(
+  workout: WorkoutState,
+  exerciseIndex: number,
+  setIndex: number,
+  rir: number | null,
+): WorkoutState {
+  return {
+    ...workout,
+    exercises: workout.exercises.map((workoutExercise, exIdx) => {
+      if (exIdx !== exerciseIndex) return workoutExercise;
+      return {
+        ...workoutExercise,
+        sets: workoutExercise.sets.map((set, idx) => (idx === setIndex ? { ...set, rir } : set)),
+      };
+    }),
+  };
+}
+
+/** One completed set from a previous session, used as the overload reference. */
+export interface PastSet {
+  reps: number;
+  weight: number;
+  rir: number | null;
+}
+
+/**
+ * Completed sets for an exercise from the most recent earlier session that
+ * logged it. History arrives newest-first; sessions on or after the current
+ * date are skipped so an in-progress day never compares against itself.
+ */
+export function findLastPerformance(
+  history: WorkoutHistoryEntry[],
+  exerciseId: string,
+  currentDate: string,
+): PastSet[] | null {
+  for (const entry of history) {
+    if (entry.date >= currentDate) continue;
+    const match = entry.exercises.find((we) => we.exercise.id === exerciseId);
+    if (!match) continue;
+    const completed = match.sets.filter((set) => set.completed);
+    if (completed.length === 0) continue;
+    return completed.map((set) => ({ reps: set.reps, weight: set.weight, rir: set.rir }));
+  }
+  return null;
+}
+
+/**
+ * The prior-session set to compare against for a given set index. A shorter
+ * previous session falls back to its final set, so set 4 still has a reference
+ * when last time only ran three.
+ */
+export function pastSetForIndex(past: PastSet[] | null, setIndex: number): PastSet | null {
+  if (past === null || past.length === 0) return null;
+  return past[Math.min(setIndex, past.length - 1)];
+}
+
 export function getWorkoutTotals(workout: WorkoutState) {
   const totalSets = workout.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
   const completedSets = workout.exercises.reduce(

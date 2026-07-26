@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAutosaveController, type AutosaveController, type AutosaveState } from '~/lib/autosave';
 import { SaveStatus } from '~/components/SaveStatus';
 import type { WorkoutState as WorkoutStateType } from '~/lib/types';
@@ -12,6 +12,7 @@ import { ExerciseSelector } from '~/components/ExerciseSelector';
 import { WorkoutTracker } from '~/components/WorkoutTracker';
 import { WorkoutHistory } from '~/components/WorkoutHistory';
 import { RestTimer } from '~/components/RestTimer';
+import { Skeleton } from '~/components/Skeleton';
 import {
   completeWorkout,
   getActiveWorkout,
@@ -30,11 +31,14 @@ import {
 import {
   createCardioWorkoutExercise,
   createWorkoutExercise,
+  findLastPerformance,
   getTodayWeekday,
   getWorkoutTotals,
   replaceWorkoutWithRoutine,
   routineHasItems,
+  setSetRir,
   updateSetRecord,
+  type PastSet,
 } from '~/lib/workout-mappers';
 import type {
   CardioEquipment,
@@ -46,11 +50,25 @@ import type {
 
 type TrainingMode = 'workout' | 'history';
 
+/** Mirrors an exercise card: title, target line, then the set rows. */
 function LoadingSkeleton() {
   return (
-    <div className="space-y-3" aria-label="Loading workout">
+    <div className="space-y-3" role="status" aria-live="polite" aria-label="Loading workout">
+      <span className="sr-only">Loading workout</span>
       {[0, 1, 2].map((i) => (
-        <div key={i} className="card h-24 animate-pulse bg-slate-200 dark:bg-slate-800" />
+        <div key={i} className="card">
+          <div className="mb-3 flex items-start gap-2.5">
+            <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+            <span className="block w-full space-y-1.5">
+              <Skeleton className="h-3.5 w-2/5" />
+              <Skeleton className="h-3 w-3/5" />
+            </span>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-11 w-full rounded-xl" />
+            <Skeleton className="h-11 w-full rounded-xl" />
+          </div>
+        </div>
       ))}
     </div>
   );
@@ -242,6 +260,26 @@ export default function TrainingPage() {
     [mutateWorkout],
   );
 
+  const changeSetRir = useCallback(
+    (exIdx: number, setIdx: number, rir: number | null) => {
+      mutateWorkout((current) => setSetRir(current, exIdx, setIdx, rir));
+    },
+    [mutateWorkout],
+  );
+
+  // Overload reference per exercise, read from the history already loaded for
+  // the History tab — no extra round trip.
+  const pastByExerciseId = useMemo(() => {
+    const map: Record<string, PastSet[]> = {};
+    if (!workout) return map;
+    for (const we of workout.exercises) {
+      if (map[we.exercise.id]) continue;
+      const past = findLastPerformance(history, we.exercise.id, today);
+      if (past) map[we.exercise.id] = past;
+    }
+    return map;
+  }, [workout, history, today]);
+
   const removeExercise = useCallback(
     (exIdx: number) => {
       mutateWorkout((current) => ({
@@ -425,8 +463,10 @@ export default function TrainingPage() {
             exercises={workout.exercises}
             cardioExercises={workout.cardioExercises}
             onLogSet={logSet}
+            onSetRir={changeSetRir}
             onRemoveExercise={removeExercise}
             onRemoveCardioExercise={removeCardio}
+            pastByExerciseId={pastByExerciseId}
           />
 
           {hasItems && !showSelector ? (
