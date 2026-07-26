@@ -1,0 +1,21 @@
+# Line-ending policy.
+#
+# The repository stores text as LF. `text=auto` lets git normalise on the way
+# in, so a Windows checkout can keep CRLF on disk without every file showing
+# as modified. Binary assets are marked explicitly rather than left to content
+# detection, which can misfire on small files.
+
+* text=auto
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Files that must stay LF on every platform: shell scripts break with CRLF,
+# and the manifest is served verbatim.
+*.sh text eol=lf
+*.webmanifest text eol=lf
