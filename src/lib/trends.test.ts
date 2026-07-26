@@ -96,10 +96,20 @@ describe('hasLoggedData', () => {
     expect(hasLoggedData(makeLog({ log_date: TODAY, daily_calories: 2000 }))).toBe(true);
     expect(hasLoggedData(makeLog({ log_date: TODAY, training_done: true }))).toBe(true);
     expect(hasLoggedData(makeLog({ log_date: TODAY, sleep_quality: 4 }))).toBe(true);
+    expect(hasLoggedData(makeLog({ log_date: TODAY, energy_score: 3 }))).toBe(true);
+    expect(hasLoggedData(makeLog({ log_date: TODAY, creatine_taken: true }))).toBe(true);
+    expect(hasLoggedData(makeLog({ log_date: TODAY, last_caffeine_time: '13:30' }))).toBe(true);
+    expect(hasLoggedData(makeLog({ log_date: TODAY, notes: 'Knee felt good' }))).toBe(true);
   });
 
   it('leaves an untouched row uncounted', () => {
     expect(hasLoggedData(makeLog({ log_date: TODAY }))).toBe(false);
+  });
+
+  it('ignores schema defaults that exist before the user records anything', () => {
+    expect(
+      hasLoggedData(makeLog({ log_date: TODAY, meals_count: 4, full_rom_followed: true })),
+    ).toBe(false);
   });
 });
 

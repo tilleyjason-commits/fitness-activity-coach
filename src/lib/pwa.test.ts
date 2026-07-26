@@ -85,6 +85,11 @@ describe('theme bootstrap', () => {
     expect(html).toContain('rel="manifest"');
     expect(html).toContain('rel="apple-touch-icon"');
   });
+
+  it('keeps standalone iPhone content below the translucent status bar', () => {
+    expect(html).toContain('apple-mobile-web-app-status-bar-style" content="black-translucent"');
+    expect(html).toContain('env(safe-area-inset-top)');
+  });
 });
 
 describe('service worker', () => {
@@ -101,5 +106,18 @@ describe('service worker', () => {
   it('drops stale caches on activate', () => {
     expect(sw).toContain('caches.delete');
     expect(sw).toContain('CACHE_VERSION');
+  });
+
+  it('deletes only Fitness Activity Coach caches on the shared Pages origin', () => {
+    expect(sw).toContain("key.startsWith('fac-')");
+    expect(sw).not.toMatch(/keys\.filter\(\(key\) => key !== CACHE_NAME\)/);
+  });
+
+  it('discovers and precaches the production bundles from the built shell', () => {
+    expect(sw).toContain('precacheShell');
+    expect(sw).toContain('matchAll');
+    expect(sw).toContain("url.pathname.startsWith(scopeUrl.pathname)");
+    expect(sw).toContain('asset-manifest.json');
+    expect(sw).toContain('Object.values(manifest)');
   });
 });

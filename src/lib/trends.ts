@@ -40,18 +40,57 @@ function average(values: number[]): number | null {
 }
 
 /**
- * A day counts as logged once any tracked field carries a value. Written
- * against null *and* undefined: partial rows reach the client whenever a
- * column is added ahead of its migration.
+ * A day counts as logged once any non-default tracked field carries a value.
+ * Schema defaults such as meals_count=4 and full_rom_followed=true are
+ * intentionally excluded because they exist before the user records anything.
+ * Written against null *and* undefined: partial rows reach the client whenever
+ * a column is added ahead of its migration.
  */
 export function hasLoggedData(log: DailyLog): boolean {
-  const present = (value: number | null | undefined) => value !== null && value !== undefined;
+  const present = (value: unknown) => value !== null && value !== undefined && value !== '';
   return (
     log.training_done === true ||
+    present(log.training_session_type) ||
+    present(log.compound_rir) ||
+    present(log.isolation_rir) ||
+    present(log.double_progression_followed) ||
+    log.barbell_squat_done === true ||
+    log.barbell_ohp_done === true ||
     present(log.daily_calories) ||
     present(log.daily_protein_g) ||
+    present(log.daily_carbs_g) ||
+    present(log.daily_fat_g) ||
+    present(log.pre_gym_snack_time) ||
+    present(log.post_gym_meal_time) ||
+    log.snack_3pm_logged === true ||
+    log.casein_taken === true ||
+    log.dinner_logged === true ||
+    log.dinner_plates > 0 ||
+    log.dinner_protein_first === true ||
+    log.candy_cravings_today > 0 ||
+    log.creatine_taken === true ||
+    log.beta_alanine_taken === true ||
+    log.omega3_taken === true ||
+    present(log.caffeine_mg) ||
+    log.vitamin_d_taken === true ||
+    log.magnesium_taken === true ||
+    present(log.last_caffeine_time) ||
+    present(log.caffeine_cutoff_respected) ||
+    present(log.bedtime) ||
+    present(log.waketime) ||
+    present(log.last_screen_time) ||
+    log.early_wake === true ||
     present(log.sleep_quality) ||
-    present(log.weekly_weight_lb)
+    present(log.energy_score) ||
+    present(log.stress_score) ||
+    present(log.hunger_score) ||
+    present(log.compound_rest_sec) ||
+    present(log.isolation_rest_sec) ||
+    present(log.session_minutes) ||
+    present(log.last_deload_date) ||
+    present(log.weekly_weight_lb) ||
+    present(log.weekly_waist_inches) ||
+    present(log.notes)
   );
 }
 

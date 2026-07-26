@@ -210,9 +210,11 @@ test.describe('authenticated user-supplements smoke', () => {
         .eq('log_date', today);
       expect(precleanError).toBeNull();
 
-      // --- UI as user A: quick action → toggle Creatine on, verify persistence.
+      // --- UI as user A: Log hub → toggle Creatine on, verify persistence.
+      // Home intentionally no longer carries the old quick-action grid.
       await signInThroughUi(page);
-      await page.getByRole('link', { name: 'Log Supplements' }).click();
+      await page.getByRole('link', { name: 'Log', exact: true }).click();
+      await page.getByRole('link', { name: /^Supplements/ }).click();
       await expect(page).toHaveURL(/#\/log\/supplements/);
 
       const creatineSwitch = page.getByRole('switch', { name: 'Creatine' });
