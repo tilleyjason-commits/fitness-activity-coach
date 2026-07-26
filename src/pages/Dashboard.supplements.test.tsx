@@ -194,27 +194,29 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('quick actions', () => {
-  it('routes Log Meal to the canonical meal tracker, with sleep/supplements/weight beside it', () => {
+describe('logging shortcuts from Home', () => {
+  it('routes the macro hero to the canonical meal tracker', () => {
     renderDashboard();
-    expect(screen.getByRole('link', { name: /Log Meal/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /today's macros/i })).toHaveAttribute(
       'href',
       expect.stringContaining('/macros'),
     );
-    expect(screen.getByRole('link', { name: /Log Supplements/i })).toHaveAttribute(
+  });
+
+  it('keeps each compliance item a shortcut to its own logging surface', async () => {
+    renderDashboard();
+
+    expect(await screen.findByRole('link', { name: /^Creatine:/ })).toHaveAttribute(
       'href',
       expect.stringContaining('/log/supplements'),
     );
-    expect(screen.getByRole('link', { name: /Log Sleep/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Sleep:/ })).toHaveAttribute(
       'href',
       expect.stringContaining('/log/sleep'),
     );
-    expect(screen.getByRole('link', { name: /Log Weight/i })).toHaveAttribute(
-      'href',
-      expect.stringContaining('/log/weight'),
-    );
-    // No competing nutrition entry from Home — backfill lives in the Log hub.
+    // Backfill and the weekly weigh-in stay in the Log hub, off Home.
     expect(screen.queryByRole('link', { name: /Log Nutrition/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Log Weight/i })).not.toBeInTheDocument();
   });
 });
 

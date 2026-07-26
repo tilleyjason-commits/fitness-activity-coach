@@ -10,15 +10,17 @@ const STATUS_TEXT: Record<DotStatus, string> = {
 
 interface StatusDotProps {
   status: DotStatus;
-  /** Optional caption under the dot (compliance row on the dashboard). */
+  /** Optional caption beside or under the dot (compliance row on the dashboard). */
   label?: string;
+  /** 'inline' puts the caption to the right for compact strips. */
+  layout?: 'stacked' | 'inline';
 }
 
 /**
  * Compliance status with shape redundancy so it survives color blindness:
  * pass = filled green check, fail = filled red ×, pending = hollow gray ring.
  */
-export function StatusDot({ status, label }: StatusDotProps) {
+export function StatusDot({ status, label, layout = 'stacked' }: StatusDotProps) {
   const ariaLabel = label ? `${label}: ${STATUS_TEXT[status]}` : STATUS_TEXT[status];
   const dot =
     status === 'pass' ? (
@@ -48,7 +50,13 @@ export function StatusDot({ status, label }: StatusDotProps) {
   if (!label) return dot;
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
+    <div
+      className={
+        layout === 'inline'
+          ? 'flex items-center gap-1.5'
+          : 'flex flex-col items-center gap-1.5'
+      }
+    >
       {dot}
       <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
     </div>

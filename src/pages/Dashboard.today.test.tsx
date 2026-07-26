@@ -230,19 +230,54 @@ describe('compliance row', () => {
 });
 
 describe('home layout order', () => {
-  it('orders compliance → workout card → quick actions → recommendations', async () => {
+  it('leads with the macro figures, then workout, then compliance, then recommendations', async () => {
     renderDashboard();
-    const compliance = screen.getByRole('region', { name: "Today's compliance" });
+    const hero = screen.getByRole('link', { name: /today's macros/i });
     const workoutCard = await screen.findByRole('region', { name: "Today's workout" });
-    const actions = screen.getByRole('region', { name: 'Quick actions' });
+    const compliance = screen.getByRole('region', { name: "Today's compliance" });
     const recs = screen.getByRole('region', { name: 'Recommendations' });
 
+    expect(hero.compareDocumentPosition(workoutCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(
-      compliance.compareDocumentPosition(workoutCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+      workoutCard.compareDocumentPosition(compliance) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(
-      workoutCard.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(actions.compareDocumentPosition(recs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(compliance.compareDocumentPosition(recs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('macro hero', () => {
+  it('shows calories and protein remaining against the day’s targets', () => {
+    dailyLogState.log = {
+      daily_calories: 1758,
+      daily_protein_g: 139,
+    } as unknown as DailyLog;
+    renderDashboard();
+
+    const hero = screen.getByRole('link', { name: /today's macros/i });
+    expect(within(hero).getByText('742')).toBeInTheDocument();
+    expect(within(hero).getByText('1,758 of 2,500')).toBeInTheDocument();
+    expect(within(hero).getByText('61')).toBeInTheDocument();
+    expect(within(hero).getByText('139 of 200')).toBeInTheDocument();
+  });
+
+  it('flips to an "over" reading once calories pass the band', () => {
+    dailyLogState.log = {
+      daily_calories: 2900,
+      daily_protein_g: 210,
+    } as unknown as DailyLog;
+    renderDashboard();
+
+    const hero = screen.getByRole('link', { name: /today's macros/i });
+    expect(within(hero).getByText(/calories over/i)).toBeInTheDocument();
+    expect(within(hero).getByText('400')).toBeInTheDocument();
+  });
+
+  it('shows the full target as remaining before anything is logged', () => {
+    renderDashboard();
+
+    const hero = screen.getByRole('link', { name: /today's macros/i });
+    expect(hero).toHaveAttribute('href', '/macros');
+    expect(within(hero).getByText('2,500')).toBeInTheDocument();
+    expect(within(hero).getByText('200')).toBeInTheDocument();
   });
 });

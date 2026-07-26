@@ -1,16 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import {
-  CheckCircle2,
-  Dumbbell,
-  Moon,
-  Pill,
-  Play,
-  Scale,
-  UtensilsCrossed,
-  type LucideIcon,
-} from 'lucide-react';
+import { ChevronRight, CheckCircle2, Dumbbell, Play } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
 import { useSupplements } from '~/hooks/useSupplements';
@@ -30,7 +21,7 @@ import {
   isCanonicalActive,
   isSupplementRuleApplicable,
 } from '~/lib/supplements';
-import { resolveTargets } from '~/lib/constants';
+import { resolveTargets, type MacroTargets } from '~/lib/constants';
 import {
   SEVERITY_ORDER,
   type DailyLog,
@@ -40,6 +31,7 @@ import {
   type WorkoutState,
 } from '~/lib/types';
 import { StatusDot, type DotStatus } from '~/components/StatusDot';
+import { Skeleton, SkeletonCard } from '~/components/Skeleton';
 import { RecommendationCard } from '~/components/RecommendationCard';
 
 const WeightSparkline = lazy(() => import('~/components/WeightSparkline'));
@@ -139,8 +131,18 @@ function coachLine(today: TodayWorkout): string | null {
 function TodayWorkoutCard({ today }: { today: TodayWorkout }) {
   if (today.kind === 'loading') {
     return (
-      <section className="card mb-4 animate-pulse" aria-label="Today's workout">
-        <h2 className="section-title mb-0">Today&apos;s workout</h2>
+      <section className="card mb-4" aria-label="Today's workout">
+        <h2 className="section-title">Today&apos;s workout</h2>
+        <div className="flex items-center justify-between gap-3">
+          <span className="flex min-w-0 flex-1 items-center gap-2.5">
+            <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+            <span className="block w-full space-y-1.5">
+              <Skeleton className="h-3.5 w-1/2" />
+              <Skeleton className="h-3 w-1/3" />
+            </span>
+          </span>
+          <Skeleton className="h-11 w-24 shrink-0 rounded-xl" />
+        </div>
       </section>
     );
   }
@@ -197,18 +199,120 @@ function TodayWorkoutCard({ today }: { today: TodayWorkout }) {
   );
 }
 
-interface QuickAction {
-  to: string;
+interface MacroReadingProps {
   label: string;
-  icon: LucideIcon;
+  /** Remaining amount; negative means the target is already exceeded. */
+  left: number;
+  consumed: number;
+  target: number;
+  unit?: string;
+  /** Bar + figure tint: emerald on track, amber short, red over. */
+  tone: 'ok' | 'short' | 'over';
+  align?: 'left' | 'right';
 }
 
-const QUICK_ACTIONS: QuickAction[] = [
-  { to: '/macros', label: 'Meal', icon: UtensilsCrossed },
-  { to: '/log/sleep', label: 'Sleep', icon: Moon },
-  { to: '/log/supplements', label: 'Supplements', icon: Pill },
-  { to: '/log/weight', label: 'Weight', icon: Scale },
-];
+const TONE_TEXT: Record<MacroReadingProps['tone'], string> = {
+  ok: '',
+  short: 'text-amber-500',
+  over: 'text-red-500',
+};
+
+const TONE_BAR: Record<MacroReadingProps['tone'], string> = {
+  ok: 'bg-emerald-500',
+  short: 'bg-amber-500',
+  over: 'bg-red-500',
+};
+
+function MacroReading({
+  label,
+  left,
+  consumed,
+  target,
+  unit = '',
+  tone,
+  align = 'left',
+}: MacroReadingProps) {
+  const over = left < 0;
+  return (
+    <div className={align === 'right' ? 'text-right' : ''}>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {over ? `${label} over` : `${label} left`}
+      </p>
+      <p className={`text-stat font-bold tabular-nums ${TONE_TEXT[tone]}`}>
+        {Math.abs(Math.round(left)).toLocaleString()}
+        {unit && <span className="text-base font-semibold">{unit}</span>}
+      </p>
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        {Math.round(consumed).toLocaleString()} of {Math.round(target).toLocaleString()}
+      </p>
+    </div>
+  );
+}
+
+function MacroBar({ pct, tone, label }: { pct: number; tone: MacroReadingProps['tone']; label: string }) {
+  return (
+    <div
+      className="h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+      role="progressbar"
+      aria-valuenow={Math.round(pct)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={label}
+    >
+      <div className={`h-full transition-all ${TONE_BAR[tone]}`} style={{ width: `${pct}%` }} />
+    </div>
+  );
+}
+
+/**
+ * The two figures Home exists to answer: how much food is left today. Reads
+ * from the same daily_logs totals the macro tracker writes, so it never
+ * disagrees with the meal pages.
+ */
+function MacroHero({ log, targets }: { log: DailyLog | null; targets: MacroTargets }) {
+  const calories = log?.daily_calories ?? 0;
+  const protein = log?.daily_protein_g ?? 0;
+
+  const caloriesLeft = targets.calories - calories;
+  const proteinLeft = targets.proteinG - protein;
+
+  const caloriesTone = calories > targets.caloriesMax ? 'over' : 'ok';
+  const proteinTone = proteinLeft <= 0 ? 'ok' : protein > 0 ? 'short' : 'ok';
+
+  const pct = (value: number, target: number) =>
+    target <= 0 ? 0 : Math.min(100, Math.max(0, (value / target) * 100));
+
+  return (
+    <Link
+      to="/macros"
+      className="card mb-4 block transition-colors hover:border-emerald-500/50"
+      aria-label="Today's macros — open the meal tracker"
+    >
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <MacroReading
+          label="Calories"
+          left={caloriesLeft}
+          consumed={calories}
+          target={targets.calories}
+          tone={caloriesTone}
+        />
+        <MacroReading
+          label="Protein"
+          left={proteinLeft}
+          consumed={protein}
+          target={targets.proteinG}
+          unit="g"
+          tone={proteinTone}
+          align="right"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <MacroBar pct={pct(calories, targets.calories)} tone={caloriesTone} label="Calories logged" />
+        <MacroBar pct={pct(protein, targets.proteinG)} tone={proteinTone} label="Protein logged" />
+      </div>
+    </Link>
+  );
+}
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -363,7 +467,7 @@ export default function Dashboard() {
         <p className="text-sm text-slate-500 dark:text-slate-400">
           {format(new Date(), 'EEEE, MMMM d')}
         </p>
-        <h1 className="text-2xl font-bold">{greeting(resolveFirstName(user))}</h1>
+        <h1 className="text-display font-bold">{greeting(resolveFirstName(user))}</h1>
         {coachLine(todayWorkout) && (
           <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-300">
             {coachLine(todayWorkout)}
@@ -371,44 +475,29 @@ export default function Dashboard() {
         )}
       </header>
 
-      <section className="card mb-4" aria-label="Today's compliance">
-        <h2 className="section-title">Today</h2>
-        <div className="flex items-start justify-between">
+      <MacroHero log={log} targets={targets} />
+
+      <TodayWorkoutCard today={todayWorkout} />
+
+      {/* Secondary glance: status only, each dot still its own shortcut. */}
+      <section className="card mb-4 py-3" aria-label="Today's compliance">
+        <div className="flex flex-wrap items-center justify-between gap-y-2">
           {complianceItems(log, showCreatine, targets.proteinMinG).map((item) => (
             <Link
               key={item.label}
               to={item.to}
-              className="rounded-lg py-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700/60"
+              className="rounded-lg px-1 py-0.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700/60"
             >
-              <StatusDot status={item.status} label={item.label} />
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      <TodayWorkoutCard today={todayWorkout} />
-
-      <section className="mb-4" aria-label="Quick actions">
-        <div className="grid grid-cols-2 gap-3">
-          {QUICK_ACTIONS.map(({ to, label, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className="card flex flex-col items-center gap-2 py-4 transition-colors hover:border-emerald-500/50"
-            >
-              <Icon className="h-6 w-6 text-emerald-500" aria-hidden />
-              <span className="text-xs font-semibold">Log {label}</span>
+              <StatusDot status={item.status} label={item.label} layout="inline" />
             </Link>
           ))}
         </div>
       </section>
 
       <section className="mb-4" aria-label="Recommendations">
-        <h2 className="section-title">Recommendations</h2>
+        <h2 className="section-title">Needs attention</h2>
         {loading || supplementsLoading ? (
-          <div className="card animate-pulse text-sm text-slate-500 dark:text-slate-400">
-            Evaluating today&apos;s rules…
-          </div>
+          <SkeletonCard label="Evaluating today's rules" lines={['w-1/4', 'w-full', 'w-3/5']} />
         ) : sortedRecs.length === 0 ? (
           <div className="card flex items-center gap-3">
             <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" aria-hidden />
@@ -420,15 +509,22 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="space-y-3">
-            {sortedRecs.map((rec) => (
-              <RecommendationCard
-                key={rec.id}
-                severity={rec.severity}
-                message={rec.message}
-                domain={getRuleById(rec.rule_id)?.domain}
-                onDismiss={() => void handleDismiss(rec.id)}
-              />
-            ))}
+            {/* Home shows the single highest-severity item; the rest live on Progress. */}
+            <RecommendationCard
+              severity={sortedRecs[0].severity}
+              message={sortedRecs[0].message}
+              domain={getRuleById(sortedRecs[0].rule_id)?.domain}
+              onDismiss={() => void handleDismiss(sortedRecs[0].id)}
+            />
+            {sortedRecs.length > 1 && (
+              <Link
+                to="/weekly"
+                className="flex min-h-11 items-center justify-between rounded-xl px-1 text-sm font-medium text-slate-500 transition-colors hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+              >
+                {sortedRecs.length - 1} more in Progress
+                <ChevronRight className="h-4 w-4" aria-hidden />
+              </Link>
+            )}
           </div>
         )}
       </section>
@@ -436,8 +532,9 @@ export default function Dashboard() {
       {sparkData.length >= 2 && (
         <Suspense
           fallback={(
-            <section className="card animate-pulse" aria-label="Weight trend">
-              <h2 className="section-title mb-0">Weight trend</h2>
+            <section className="card" aria-label="Weight trend">
+              <h2 className="section-title">Weight trend</h2>
+              <Skeleton className="h-20 w-full rounded-lg" />
             </section>
           )}
         >
