@@ -38,4 +38,11 @@ export default tseslint.config(
       globals: { Deno: 'readonly' },
     },
   },
+  {
+    // The service worker runs in a ServiceWorkerGlobalScope, not a window.
+    files: ['public/sw.js'],
+    languageOptions: {
+      globals: { ...globals.serviceworker, ...globals.browser },
+    },
+  },
 );
