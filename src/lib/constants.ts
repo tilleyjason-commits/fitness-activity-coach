@@ -60,12 +60,17 @@ function toHHMM(time: string | null | undefined, fallback: string): string {
   return time.length > 5 ? time.slice(0, 5) : time;
 }
 
-function addMinutes(hhmm: string, delta: number): string {
+/** Clock arithmetic for HH:MM (wraps at midnight). Exported for rule windows. */
+export function addMinutesToHhmm(hhmm: string, delta: number): string {
   const [h, m] = hhmm.split(':').map(Number);
   const total = (((h * 60 + m + delta) % (24 * 60)) + 24 * 60) % (24 * 60);
   const hh = Math.floor(total / 60);
   const mm = total % 60;
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+function addMinutes(hhmm: string, delta: number): string {
+  return addMinutesToHhmm(hhmm, delta);
 }
 
 /**
@@ -122,13 +127,29 @@ export function resolveTargets(profile: Profile | null | undefined): MacroTarget
 /** Anchor meal timing around the athlete's preferred training_time. */
 export function resolveMealTiming(profile: Profile | null | undefined): MealTiming {
   const training = toHHMM(profile?.training_time, DEFAULT_MEAL_TIMING.training);
+  const bedtime = DEFAULT_MEAL_TIMING.bedtime;
+  const waketime = DEFAULT_MEAL_TIMING.waketime;
+  // ~8h before bed keeps the cutoff coherent with the sleep target (Drake 2013).
+  const caffeineCutoff = addMinutes(bedtime, -8 * 60);
   return {
     ...DEFAULT_MEAL_TIMING,
     training,
     preGymSnack: addMinutes(training, -45),
+    // Soft UI target ~15 min after a typical 60 min session.
     postGymMeal: addMinutes(training, 75),
-    // Caffeine cutoff ~3h before typical bedtime remains default unless later customized.
+    caffeineCutoff,
+    bedtime,
+    waketime,
   };
+}
+
+/**
+ * Hard deadline for post-gym meal pass/fail: training start + 90 min
+ * (≈ 30 min after a 60 min session). Matches the old Jason baseline of 12:30
+ * for an 11:00 train, but shifts with profile.training_time.
+ */
+export function postGymMealDeadline(timing: MealTiming): string {
+  return addMinutes(timing.training, 90);
 }
 
 /** Canonical render order for the macro tracker's meal cards. */

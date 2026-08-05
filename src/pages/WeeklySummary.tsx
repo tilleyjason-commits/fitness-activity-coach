@@ -69,6 +69,40 @@ function activeWeekRecs(recs: Recommendation[]): Recommendation[] {
   );
 }
 
+function recommendationAction(ruleId: string, domain: string | undefined): { to: string; label: string } {
+  if (
+    ruleId.includes('protein') ||
+    ruleId.includes('calories') ||
+    ruleId.includes('meal') ||
+    ruleId.includes('snack') ||
+    ruleId.includes('dinner')
+  ) {
+    return { to: '/macros', label: 'Log food' };
+  }
+  if (ruleId.includes('casein')) return { to: '/log/nutrition', label: 'Log PM protein' };
+  if (
+    ruleId.includes('caffeine') ||
+    ruleId.includes('bedtime') ||
+    ruleId.includes('wake') ||
+    ruleId.includes('screen') ||
+    ruleId.includes('sleep')
+  ) {
+    return { to: '/log/sleep', label: 'Log sleep' };
+  }
+  if (
+    ruleId.includes('creatine') ||
+    ruleId.includes('vitamin') ||
+    ruleId.includes('magnesium') ||
+    ruleId.includes('beta_alanine') ||
+    ruleId.includes('omega3')
+  ) {
+    return { to: '/log/supplements', label: 'Log supplements' };
+  }
+  if (domain === 'training') return { to: '/training', label: 'Open workout' };
+  if (domain === 'recovery') return { to: '/log/subjective', label: 'Log recovery' };
+  return { to: '/log', label: 'Open log' };
+}
+
 export default function WeeklySummary() {
   const { user } = useAuth();
   const isDark = useIsDark();
@@ -674,15 +708,22 @@ export default function WeeklySummary() {
           </div>
         ) : (
           <div className="space-y-3">
-            {recs.map((rec) => (
-              <RecommendationCard
-                key={rec.id}
-                severity={rec.severity}
-                message={rec.message}
-                domain={getRuleById(rec.rule_id)?.domain}
-                onDismiss={() => void handleDismiss(rec.id)}
-              />
-            ))}
+            {recs.map((rec) => {
+              const rule = getRuleById(rec.rule_id);
+              const action = recommendationAction(rec.rule_id, rule?.domain);
+              return (
+                <RecommendationCard
+                  key={rec.id}
+                  severity={rec.severity}
+                  message={rec.message}
+                  domain={rule?.domain}
+                  actionTo={action.to}
+                  actionLabel={action.label}
+                  evidence={rule?.evidence}
+                  onDismiss={() => void handleDismiss(rec.id)}
+                />
+              );
+            })}
           </div>
         )}
       </section>

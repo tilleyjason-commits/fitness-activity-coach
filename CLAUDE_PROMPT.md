@@ -17,9 +17,12 @@ MODIFIED FILES:
 10. src/pages/LogNutrition.tsx - Add link to macro tracker
 
 IMPORTANT IMPLEMENTATION DETAILS:
-- The Edge Function calls NVIDIA NIM API at https://api.nvcf.nvidia.com/v1/chat/completions with model glm-5.2
-- It reads the API key from env.NVIDIA_API_KEY (set via Supabase secrets)
-- The function parses GLM-5.2 JSON response, never calls a database
+- The Edge Function calls OpenRouter first, then NVIDIA NIM at
+  `https://api.nvcf.nvidia.com/v1/chat/completions` with model `z-ai/glm-5.2`
+- It reads `OPENROUTER_API_KEY` and `NVIDIA_API_KEY` from Supabase secrets;
+  OpenRouter is primary and NVIDIA is the fallback
+- The function parses either provider's JSON response and uses Supabase only for
+  authentication and the server-enforced rate-limit RPC
 - Use fetch() in Deno for the NVIDIA API call
 - The frontend calls the Edge Function with supabase.functions.invoke('calculate-macros', { body: { description, meal_slot } })
 - syncDailyTotals() queries meal_logs, sums totals, then updates daily_logs

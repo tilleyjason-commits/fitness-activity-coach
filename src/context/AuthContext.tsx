@@ -11,6 +11,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '~/lib/supabase';
 import { quarantineDailyLogSaveQueue } from '~/lib/daily-log-offline-queue';
 import { quarantineMealSaveQueue } from '~/lib/meal-offline-queue';
+import { quarantineWorkoutSaveQueue } from '~/lib/workout-offline-queue';
 
 interface AuthContextValue {
   user: User | null;
@@ -85,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (outgoingUserId) {
       quarantineDailyLogSaveQueue(outgoingUserId);
       quarantineMealSaveQueue(outgoingUserId);
+      quarantineWorkoutSaveQueue(outgoingUserId);
     }
   }, [session]);
 
