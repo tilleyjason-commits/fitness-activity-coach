@@ -89,8 +89,8 @@ describe('provider fallback disclosure', () => {
         },
       ],
       meal_total: { calories: 550, protein_g: 40, carbs_g: 50, fat_g: 18 },
-      provider: 'deepseek',
-      model: 'deepseek-chat',
+      provider: 'nvidia',
+      model: 'z-ai/glm-5.2',
       fallback: true,
       fallback_reason: 'NVIDIA 429',
     };
@@ -108,10 +108,10 @@ describe('provider fallback disclosure', () => {
     );
 
     // Vendor specifics live behind a tap but remain fully discoverable.
-    const detail = screen.getByText(/deepseek-chat/i);
+    const detail = screen.getByText(/z-ai\/glm-5\.2/i);
     expect(detail).not.toBeVisible();
     await user.click(screen.getByText(/details/i));
-    expect(screen.getByText(/deepseek-chat/i)).toBeVisible();
+    expect(screen.getByText(/z-ai\/glm-5\.2/i)).toBeVisible();
     expect(screen.getByText(/NVIDIA 429/i)).toBeVisible();
   });
 

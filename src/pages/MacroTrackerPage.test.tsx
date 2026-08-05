@@ -21,6 +21,7 @@ vi.mock('~/lib/db', () => ({
   getMealLogs: (...args: unknown[]) => getMealLogsMock(...args),
   getMealFoods: (...args: unknown[]) => getMealFoodsMock(...args),
   getProfile: () => Promise.resolve(null),
+  getRecentMeals: () => Promise.resolve([]),
   saveMeal: vi.fn(),
   deleteMeal: vi.fn(),
   calculateMacros: vi.fn(),

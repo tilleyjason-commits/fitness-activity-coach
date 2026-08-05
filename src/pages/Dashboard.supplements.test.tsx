@@ -40,6 +40,8 @@ const db = {
   syncRecommendations: vi.fn(),
   reconcileInapplicableRecommendations: vi.fn(),
   dismissRecommendation: vi.fn(),
+  getLogsBetween: vi.fn().mockResolvedValue([]),
+  getExerciseLogs: vi.fn().mockResolvedValue([]),
 };
 vi.mock('~/lib/db', () => ({
   getProfile: (...a: unknown[]) => db.getProfile(...a),
@@ -48,6 +50,8 @@ vi.mock('~/lib/db', () => ({
   reconcileInapplicableRecommendations: (...a: unknown[]) =>
     db.reconcileInapplicableRecommendations(...a),
   dismissRecommendation: (...a: unknown[]) => db.dismissRecommendation(...a),
+  getLogsBetween: (...a: unknown[]) => db.getLogsBetween(...a),
+  getExerciseLogs: (...a: unknown[]) => db.getExerciseLogs(...a),
 }));
 
 // Today's-workout data is exercised in Dashboard.today.test.tsx; here it just
@@ -177,6 +181,8 @@ beforeEach(() => {
   db.getRecentWeighIns.mockResolvedValue([]);
   db.syncRecommendations.mockResolvedValue([]);
   db.reconcileInapplicableRecommendations.mockResolvedValue(undefined);
+  db.getLogsBetween.mockResolvedValue([]);
+  db.getExerciseLogs.mockResolvedValue([]);
   listState = {
     supplements: [makeSupplement()],
     loading: false,
@@ -380,5 +386,48 @@ describe('recommendation applicability reconciliation', () => {
     await waitFor(() => expect(db.syncRecommendations).toHaveBeenCalled());
     expect(syncedRuleIds()).toContain('creatine_daily');
     expect(db.reconcileInapplicableRecommendations).not.toHaveBeenCalled();
+  });
+});
+
+describe('weekly context on Home', () => {
+  // Regression: Home used to evaluate rules with EMPTY_WEEKLY, so Sunday's
+  // weekly-derived coaching (volume, weight trend, weakest area) never
+  // reached the surface most people actually look at.
+  it('loads the current and prior week of logs/exercises to derive weekly context', async () => {
+    renderDashboard();
+
+    await waitFor(() => expect(db.getLogsBetween).toHaveBeenCalledTimes(2));
+    const [firstCall, secondCall] = db.getLogsBetween.mock.calls as [string, string, string][];
+    expect(firstCall[0]).toBe('user-1');
+    expect(secondCall[0]).toBe('user-1');
+    // Two distinct, non-overlapping seven-day windows (current week, prior week).
+    expect(firstCall[1]).not.toBe(secondCall[1]);
+
+    await waitFor(() => expect(db.getExerciseLogs).toHaveBeenCalledTimes(2));
+  });
+
+  it('re-syncs recommendations once the fetched weekly context resolves', async () => {
+    let resolveWeek: (logs: DailyLog[]) => void = () => {};
+    db.getLogsBetween.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveWeek = resolve;
+      }),
+    );
+    renderDashboard();
+
+    // Sync runs once with EMPTY_WEEKLY while the week fetch is in flight...
+    await waitFor(() => expect(db.syncRecommendations).toHaveBeenCalled());
+    const callsBeforeWeekly = db.syncRecommendations.mock.calls.length;
+
+    // ...then re-runs once the real weekly context lands, proving Home's
+    // rule evaluation is now wired to live weekly data instead of a
+    // fire-and-forget EMPTY_WEEKLY default.
+    await act(async () => {
+      resolveWeek([makeLog({ id: 'w1', log_date: '2026-07-14', weekly_weight_lb: 180 })]);
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(db.syncRecommendations.mock.calls.length).toBeGreaterThan(callsBeforeWeekly),
+    );
   });
 });

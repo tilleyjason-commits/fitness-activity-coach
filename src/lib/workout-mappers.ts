@@ -136,6 +136,29 @@ export function pastSetForIndex(past: PastSet[] | null, setIndex: number): PastS
   return past[Math.min(setIndex, past.length - 1)];
 }
 
+/** Simple reps-then-weight double progression: one rep first, load once reps stall near failure. */
+export interface OverloadSuggestion {
+  reps: number;
+  weight: number;
+}
+
+const NEAR_FAILURE_RIR = 1;
+const OVERLOAD_WEIGHT_STEP_LB = 5;
+
+/**
+ * Suggests the next set to beat a prior-session reference: add a rep at the
+ * same weight, unless last time was already at or near failure (RIR <= 1), in
+ * which case reps reset to the prior count and weight steps up instead. Null
+ * input (no prior set for this slot) yields no suggestion.
+ */
+export function suggestNextSet(past: PastSet | null): OverloadSuggestion | null {
+  if (past === null) return null;
+  if (past.rir !== null && past.rir <= NEAR_FAILURE_RIR) {
+    return { reps: past.reps, weight: past.weight + OVERLOAD_WEIGHT_STEP_LB };
+  }
+  return { reps: past.reps + 1, weight: past.weight };
+}
+
 export function getWorkoutTotals(workout: WorkoutState) {
   const totalSets = workout.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
   const completedSets = workout.exercises.reduce(

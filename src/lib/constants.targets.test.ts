@@ -43,6 +43,15 @@ describe('resolveMealTiming', () => {
     expect(timing.training).toBe('11:00');
     expect(timing.preGymSnack).toBe('10:15');
     expect(timing.postGymMeal).toBe('12:15');
+    // Caffeine stays ~8h before default bedtime (22:00).
+    expect(timing.caffeineCutoff).toBe('14:00');
+  });
+
+  it('shifts pre/post gym for evening trainees', () => {
+    const timing = resolveMealTiming(baseProfile({ training_time: '17:00:00' }));
+    expect(timing.training).toBe('17:00');
+    expect(timing.preGymSnack).toBe('16:15');
+    expect(timing.postGymMeal).toBe('18:15');
   });
 
   it('rebuilds meal slot hints from resolved timing', () => {

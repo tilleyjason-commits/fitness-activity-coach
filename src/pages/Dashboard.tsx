@@ -1,12 +1,14 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { format } from 'date-fns';
+import { addDays, format, startOfWeek, subDays } from 'date-fns';
 import { ChevronRight, CheckCircle2, Dumbbell, Play } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
 import { useSupplements } from '~/hooks/useSupplements';
 import {
   dismissRecommendation,
+  getExerciseLogs,
+  getLogsBetween,
   getProfile,
   getRecentWeighIns,
   reconcileInapplicableRecommendations,
@@ -14,7 +16,13 @@ import {
 } from '~/lib/db';
 import { getActiveWorkout, getWeeklyRoutines, hasCompletedWorkout } from '~/lib/workout-repo';
 import { getTodayWeekday, getWorkoutTotals, routineHasItems } from '~/lib/workout-mappers';
-import { EMPTY_WEEKLY, evaluateDay, getRuleById } from '~/lib/evaluate';
+import {
+  computeWeeklyDerived,
+  EMPTY_WEEKLY,
+  evaluateDay,
+  getRuleById,
+  type WeeklyDerived,
+} from '~/lib/evaluate';
 import {
   activeSlugSet,
   inapplicableSupplementRuleIds,
@@ -41,6 +49,40 @@ interface ComplianceItem {
   status: DotStatus;
   /** Each glanceable status is also the shortcut to its logging surface. */
   to: string;
+}
+
+function recommendationAction(ruleId: string, domain: string | undefined): { to: string; label: string } {
+  if (
+    ruleId.includes('protein') ||
+    ruleId.includes('calories') ||
+    ruleId.includes('meal') ||
+    ruleId.includes('snack') ||
+    ruleId.includes('dinner')
+  ) {
+    return { to: '/macros', label: 'Log food' };
+  }
+  if (ruleId.includes('casein')) return { to: '/log/nutrition', label: 'Log PM protein' };
+  if (
+    ruleId.includes('caffeine') ||
+    ruleId.includes('bedtime') ||
+    ruleId.includes('wake') ||
+    ruleId.includes('screen') ||
+    ruleId.includes('sleep')
+  ) {
+    return { to: '/log/sleep', label: 'Log sleep' };
+  }
+  if (
+    ruleId.includes('creatine') ||
+    ruleId.includes('vitamin') ||
+    ruleId.includes('magnesium') ||
+    ruleId.includes('beta_alanine') ||
+    ruleId.includes('omega3')
+  ) {
+    return { to: '/log/supplements', label: 'Log supplements' };
+  }
+  if (domain === 'training') return { to: '/training', label: 'Open workout' };
+  if (domain === 'recovery') return { to: '/log/subjective', label: 'Log recovery' };
+  return { to: '/log', label: 'Open log' };
 }
 
 /**
@@ -332,6 +374,7 @@ export default function Dashboard() {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [weighIns, setWeighIns] = useState<DailyLog[]>([]);
+  const [weekly, setWeekly] = useState<WeeklyDerived>(EMPTY_WEEKLY);
   const [todayWorkout, setTodayWorkout] = useState<TodayWorkout>({ kind: 'loading' });
   const {
     supplements,
@@ -399,6 +442,45 @@ export default function Dashboard() {
     };
   }, [user, today]);
 
+  // Weekly-derived context (volume, weight/waist trend, weakest area) for the
+  // rule engine — same current-week/prior-week window WeeklySummary uses.
+  // Without this, Home evaluates every rule with EMPTY_WEEKLY and the Sunday
+  // weekly rules never fire on the surface most people actually look at.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const userId = user.id;
+
+    async function loadWeekly() {
+      try {
+        const weekStartDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+        const weekStart = format(weekStartDate, 'yyyy-MM-dd');
+        const weekEnd = format(addDays(weekStartDate, 6), 'yyyy-MM-dd');
+        const prevStart = format(subDays(weekStartDate, 7), 'yyyy-MM-dd');
+        const prevEnd = format(subDays(weekStartDate, 1), 'yyyy-MM-dd');
+
+        const [logs, prevLogs] = await Promise.all([
+          getLogsBetween(userId, weekStart, weekEnd),
+          getLogsBetween(userId, prevStart, prevEnd),
+        ]);
+        const [exercises, prevExercises] = await Promise.all([
+          getExerciseLogs(logs.map((l) => l.id)),
+          getExerciseLogs(prevLogs.map((l) => l.id)),
+        ]);
+        if (cancelled) return;
+        setWeekly(computeWeeklyDerived(logs, exercises, prevLogs, prevExercises));
+      } catch {
+        // Degrade to EMPTY_WEEKLY — Home must still render today's rules offline.
+        if (!cancelled) setWeekly(EMPTY_WEEKLY);
+      }
+    }
+
+    void loadWeekly();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, today]);
+
   // Re-evaluate the rules and reconcile the recommendations table whenever
   // today's log changes (profile supplies training_time for timing rules).
   // Waits for the supplement list so built-in supplement rules sync only when
@@ -414,7 +496,7 @@ export default function Dashboard() {
 
     let cancelled = false;
     const userId = user.id;
-    const results = evaluateDay(log, EMPTY_WEEKLY, profile);
+    const results = evaluateDay(log, weekly, profile);
 
     async function refreshRecommendations() {
       try {
@@ -444,7 +526,18 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [user, log, loading, profile, profileLoaded, today, supplements, supplementsLoading, supplementsError]);
+  }, [
+    user,
+    log,
+    loading,
+    profile,
+    profileLoaded,
+    today,
+    supplements,
+    supplementsLoading,
+    supplementsError,
+    weekly,
+  ]);
 
   const sortedRecs = useMemo(
     () => [...recs].sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]),
@@ -520,12 +613,21 @@ export default function Dashboard() {
         ) : (
           <div className="space-y-3">
             {/* Home shows the single highest-severity item; the rest live on Progress. */}
-            <RecommendationCard
-              severity={sortedRecs[0].severity}
-              message={sortedRecs[0].message}
-              domain={getRuleById(sortedRecs[0].rule_id)?.domain}
-              onDismiss={() => void handleDismiss(sortedRecs[0].id)}
-            />
+            {(() => {
+              const rule = getRuleById(sortedRecs[0].rule_id);
+              const action = recommendationAction(sortedRecs[0].rule_id, rule?.domain);
+              return (
+                <RecommendationCard
+                  severity={sortedRecs[0].severity}
+                  message={sortedRecs[0].message}
+                  domain={rule?.domain}
+                  actionTo={action.to}
+                  actionLabel={action.label}
+                  evidence={rule?.evidence}
+                  onDismiss={() => void handleDismiss(sortedRecs[0].id)}
+                />
+              );
+            })()}
             {sortedRecs.length > 1 && (
               <Link
                 to="/weekly"
