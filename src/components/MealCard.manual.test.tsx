@@ -169,7 +169,7 @@ describe('MealCard manual entry when AI is unavailable', () => {
     expect(screen.getByDisplayValue('Apple')).toBeInTheDocument();
   });
 
-  it('shows a visible notice when the AI response used DeepSeek fallback', async () => {
+  it('shows a visible notice when the AI response used NVIDIA fallback', async () => {
     const user = userEvent.setup();
     const fallbackResult: MacrosFromAI = {
       foods: [
@@ -185,10 +185,10 @@ describe('MealCard manual entry when AI is unavailable', () => {
         },
       ],
       meal_total: { calories: 105, protein_g: 1.3, carbs_g: 27, fat_g: 0.4 },
-      provider: 'deepseek',
-      model: 'deepseek-chat',
+      provider: 'nvidia',
+      model: 'z-ai/glm-5.2',
       fallback: true,
-      fallback_reason: 'NVIDIA is rate-limiting requests.',
+      fallback_reason: 'OpenRouter is rate-limiting requests.',
     };
     onCalculate.mockResolvedValueOnce(fallbackResult);
     renderCard();
@@ -199,7 +199,7 @@ describe('MealCard manual entry when AI is unavailable', () => {
 
     // User-facing copy first; vendor detail stays available in the disclosure.
     expect(await screen.findByRole('status')).toHaveTextContent(/Backup AI estimated these macros/i);
-    expect(screen.getByRole('status')).toHaveTextContent(/deepseek-chat/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/z-ai\/glm-5\.2/i);
     expect(screen.getByDisplayValue('Banana')).toBeInTheDocument();
   });
 });
