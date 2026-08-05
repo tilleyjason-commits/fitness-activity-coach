@@ -39,7 +39,6 @@ function renderRoutines() {
   return render(
     <MemoryRouter
       initialEntries={['/routines']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <RoutinesPage />
     </MemoryRouter>,

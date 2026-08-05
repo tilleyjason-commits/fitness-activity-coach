@@ -38,7 +38,6 @@ async function fillWizardToFinish() {
   render(
     <MemoryRouter
       initialEntries={['/setup']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <SetupWizard />
     </MemoryRouter>,
@@ -74,7 +73,6 @@ describe('SetupWizard training_time mapping', () => {
     render(
       <MemoryRouter
         initialEntries={['/setup']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <SetupWizard />
       </MemoryRouter>,

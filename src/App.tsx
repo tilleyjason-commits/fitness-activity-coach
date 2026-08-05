@@ -87,7 +87,7 @@ function AuthGuard() {
 /** HashRouter keeps client-side routes compatible with static GitHub Pages hosting. */
 export default function App() {
   return (
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <HashRouter>
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/login" element={<Login />} />
