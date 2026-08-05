@@ -20,11 +20,11 @@ Ship in this order — each step depends on the previous one being live:
 
 2. **Edge Function**: `supabase functions deploy calculate-macros`.
    The function *fails closed* if `consume_macro_calc_quota()` is missing, so the
-   migration must be applied first. Required function secrets: `NVIDIA_API_KEY`
-   (primary) and `DEEPSEEK_API_KEY` (fallback). `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+   migration must be applied first. Required function secrets: `OPENROUTER_API_KEY`
+   (primary) and `NVIDIA_API_KEY` (fallback). `SUPABASE_URL`/`SUPABASE_ANON_KEY`
    are injected automatically.
-   Provider policy: **NVIDIA first**, then **DeepSeek** if NVIDIA fails. Success
-   responses always include `provider`, `model`, and `fallback` (true when DeepSeek
+   Provider policy: **OpenRouter first**, then **NVIDIA** if OpenRouter fails. Success
+   responses always include `provider`, `model`, and `fallback` (true when NVIDIA
    served). Fallback is never silent — the UI shows a status banner.
    The function must also be **redeployed before the 014 frontend**: its
    request allowlist must recognize `pre_workout_snack`/`bedtime_snack` before
@@ -55,11 +55,11 @@ frontend or Edge Function change needed.
 | 401 | `unauthenticated` | Missing/invalid user JWT (anon key alone is rejected) |
 | 400 | `invalid_request` | Bad body (empty description / unknown meal slot) |
 | 429 | `rate_limited` | App per-user quota exhausted (`retry_after_seconds` included) |
-| 503 | `provider_unavailable` | NVIDIA 429/5xx or network failure |
+| 503 | `provider_unavailable` | Both providers unavailable or fallback not configured |
 | 502 | `provider_invalid_output` | Model output unparseable |
 | 500 | `internal` | Unexpected fault only |
 
-Fallback provider is **DeepSeek** after NVIDIA. It is never silent: 200 bodies
+Fallback provider is **NVIDIA** after OpenRouter. It is never silent: 200 bodies
 include `fallback: true` plus `provider`/`model`, and the MealCard shows a status
 banner. Both providers failing still surfaces a structured 503.
 
