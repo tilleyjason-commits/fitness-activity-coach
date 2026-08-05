@@ -72,3 +72,11 @@ banner. Both providers failing still surfaces a structured 503.
   `SMOKE_USER_ID`). Never commit these values. In CI it runs after the quality
   gate for same-repository PRs and can also be triggered manually after merge;
   it requires the same names as GitHub secrets. It never runs on fork PRs.
+- The two-account suites (RLS isolation, per-user supplement/meal-slot
+  ownership) additionally need a **second** disposable Supabase auth user via
+  `SMOKE_USER_B_EMAIL` / `SMOKE_USER_B_PASSWORD` (locally in
+  `.env.smoke.local`, in CI as repo secrets of the same names). The `smoke`
+  job now fails outright — instead of silently `test.skip()`-ing the
+  two-account suites — if any of the five `SMOKE_USER*` secrets are missing,
+  since those suites are the isolation coverage that would catch a
+  cross-account data leak.

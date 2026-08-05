@@ -77,6 +77,15 @@ export interface MacroHandlerDeps {
   log: (...parts: string[]) => void;
 }
 
+export const MAX_REQUEST_BYTES = 16_384;
+export const MAX_DESCRIPTION_CHARS = 2_000;
+export const MAX_FOODS = 25;
+const MAX_FOOD_NAME_CHARS = 120;
+const MAX_UNIT_CHARS = 40;
+const MAX_QUANTITY = 100_000;
+const MAX_CALORIES_PER_FOOD = 10_000;
+const MAX_MACRO_GRAMS_PER_FOOD = 2_000;
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -94,13 +103,37 @@ function errorResponse(status: number, code: string, message: string, extra?: Re
   return jsonResponse({ error: { code, message, ...extra } }, status);
 }
 
-function asNumber(value: unknown): number {
+function asFiniteNumber(value: unknown, field: string): number {
   const n = typeof value === 'string' ? Number(value) : value;
-  return typeof n === 'number' && Number.isFinite(n) ? n : 0;
+  if (typeof n !== 'number' || !Number.isFinite(n)) {
+    throw new Error(`Model output has invalid ${field}`);
+  }
+  return n;
 }
 
 function asConfidence(value: unknown): AIFood['confidence'] {
-  return value === 'high' || value === 'medium' || value === 'low' ? value : 'low';
+  if (value === 'high' || value === 'medium' || value === 'low') return value;
+  throw new Error('Model output has invalid confidence');
+}
+
+function boundedString(value: unknown, field: string, maxLength: number): string {
+  if (typeof value !== 'string') throw new Error(`Model output has invalid ${field}`);
+  const normalized = value.trim();
+  if (!normalized || normalized.length > maxLength) {
+    throw new Error(`Model output has invalid ${field}`);
+  }
+  return normalized;
+}
+
+function boundedNumber(
+  value: unknown,
+  field: string,
+  min: number,
+  max: number,
+): number {
+  const n = asFiniteNumber(value, field);
+  if (n < min || n > max) throw new Error(`Model output has out-of-range ${field}`);
+  return n;
 }
 
 /** GLM sometimes wraps JSON in markdown fences; extract the outermost object. */
@@ -115,16 +148,30 @@ export function extractJson(content: string): string {
 
 export function normalizeFoods(raw: unknown): AIFood[] {
   if (!Array.isArray(raw)) throw new Error('Model output missing "foods" array');
+  if (raw.length === 0 || raw.length > MAX_FOODS) {
+    throw new Error(`Model output must contain 1-${MAX_FOODS} foods`);
+  }
   return raw.map((item) => {
     const food = (item ?? {}) as Record<string, unknown>;
     return {
-      food_name: String(food.food_name ?? 'Unknown food'),
-      quantity: asNumber(food.quantity ?? 1) || 1,
-      unit: String(food.unit ?? 'serving'),
-      calories: Math.round(asNumber(food.calories)),
-      protein_g: Math.round(asNumber(food.protein_g) * 10) / 10,
-      carbs_g: Math.round(asNumber(food.carbs_g) * 10) / 10,
-      fat_g: Math.round(asNumber(food.fat_g) * 10) / 10,
+      food_name: boundedString(food.food_name, 'food_name', MAX_FOOD_NAME_CHARS),
+      quantity: boundedNumber(food.quantity, 'quantity', Number.EPSILON, MAX_QUANTITY),
+      unit: boundedString(food.unit, 'unit', MAX_UNIT_CHARS),
+      calories: Math.round(
+        boundedNumber(food.calories, 'calories', 0, MAX_CALORIES_PER_FOOD),
+      ),
+      protein_g:
+        Math.round(
+          boundedNumber(food.protein_g, 'protein_g', 0, MAX_MACRO_GRAMS_PER_FOOD) * 10,
+        ) / 10,
+      carbs_g:
+        Math.round(
+          boundedNumber(food.carbs_g, 'carbs_g', 0, MAX_MACRO_GRAMS_PER_FOOD) * 10,
+        ) / 10,
+      fat_g:
+        Math.round(
+          boundedNumber(food.fat_g, 'fat_g', 0, MAX_MACRO_GRAMS_PER_FOOD) * 10,
+        ) / 10,
       confidence: asConfidence(food.confidence),
     };
   });
@@ -208,10 +255,22 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
       let description: string;
       let mealSlot: MealSlot;
       try {
-        const body = (await req.json()) as { description?: unknown; meal_slot?: unknown };
-        description = String(body.description ?? '').trim();
+        const contentLength = Number(req.headers.get('Content-Length') ?? '0');
+        if (Number.isFinite(contentLength) && contentLength > MAX_REQUEST_BYTES) {
+          throw new Error(`request body exceeds ${MAX_REQUEST_BYTES} bytes`);
+        }
+        const rawBody = await req.text();
+        if (new TextEncoder().encode(rawBody).byteLength > MAX_REQUEST_BYTES) {
+          throw new Error(`request body exceeds ${MAX_REQUEST_BYTES} bytes`);
+        }
+        const body = JSON.parse(rawBody) as { description?: unknown; meal_slot?: unknown };
+        if (typeof body.description !== 'string') throw new Error('description must be a string');
+        description = body.description.trim();
         mealSlot = body.meal_slot as MealSlot;
         if (!description) throw new Error('description is required');
+        if (description.length > MAX_DESCRIPTION_CHARS) {
+          throw new Error(`description must be ${MAX_DESCRIPTION_CHARS} characters or fewer`);
+        }
         if (!MEAL_SLOTS.includes(mealSlot)) throw new Error('meal_slot is invalid');
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Invalid request body';
