@@ -53,6 +53,8 @@ const db = {
   syncRecommendations: vi.fn(),
   reconcileInapplicableRecommendations: vi.fn(),
   dismissRecommendation: vi.fn(),
+  getLogsBetween: vi.fn().mockResolvedValue([]),
+  getExerciseLogs: vi.fn().mockResolvedValue([]),
 };
 vi.mock('~/lib/db', () => ({
   getProfile: (...a: unknown[]) => db.getProfile(...a),
@@ -61,6 +63,8 @@ vi.mock('~/lib/db', () => ({
   reconcileInapplicableRecommendations: (...a: unknown[]) =>
     db.reconcileInapplicableRecommendations(...a),
   dismissRecommendation: (...a: unknown[]) => db.dismissRecommendation(...a),
+  getLogsBetween: (...a: unknown[]) => db.getLogsBetween(...a),
+  getExerciseLogs: (...a: unknown[]) => db.getExerciseLogs(...a),
 }));
 
 const repo = {
@@ -118,6 +122,8 @@ beforeEach(() => {
   db.getRecentWeighIns.mockResolvedValue([]);
   db.syncRecommendations.mockResolvedValue([]);
   db.reconcileInapplicableRecommendations.mockResolvedValue(undefined);
+  db.getLogsBetween.mockResolvedValue([]);
+  db.getExerciseLogs.mockResolvedValue([]);
   repo.getActiveWorkout.mockResolvedValue(null);
   repo.getWeeklyRoutines.mockResolvedValue(createEmptyWeeklyRoutines());
   repo.hasCompletedWorkout.mockResolvedValue(false);

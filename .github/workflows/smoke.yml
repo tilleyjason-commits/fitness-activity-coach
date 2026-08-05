@@ -1,8 +1,10 @@
 name: PR quality gate and authenticated smoke
 
 # `pull_request` (not `pull_request_target`) so fork PRs run with no secrets
-# and a read-only token. The smoke job additionally guards itself so it is
-# skipped, rather than failing, when secrets are unavailable.
+# and a read-only token. The smoke job itself only runs for same-repo PRs and
+# manual dispatch (see its `if:` below) — on those runs it now requires the
+# full two-account credential set and fails loudly if any are missing, rather
+# than silently skipping the RLS-isolation suites that need a second account.
 on:
   pull_request:
   workflow_dispatch:
@@ -45,6 +47,32 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Verify required smoke secrets are configured
+        # This job only runs for same-repo PRs / workflow_dispatch (see the
+        # job-level `if:` above), so it always expects the full credential
+        # set. Two-account tests (RLS isolation, supplement/meal-slot
+        # ownership) previously test.skip()'d instead of failing when
+        # SMOKE_USER_B_* was absent — that made the isolation coverage that
+        # would have caught the offline-queue cross-account bug silently
+        # optional. Fail the job instead so a missing account is a red check,
+        # not a quiet gap.
+        run: |
+          missing=()
+          for name in SMOKE_USER_EMAIL SMOKE_USER_PASSWORD SMOKE_USER_ID SMOKE_USER_B_EMAIL SMOKE_USER_B_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required repo secrets for authenticated smoke: ${missing[*]}. Add a second disposable Supabase auth user's credentials as SMOKE_USER_B_EMAIL/SMOKE_USER_B_PASSWORD (repo Settings > Secrets and variables > Actions) — the RLS-isolation e2e suites need two accounts and must not silently skip."
+            exit 1
+          fi
+        env:
+          SMOKE_USER_EMAIL: ${{ secrets.SMOKE_USER_EMAIL }}
+          SMOKE_USER_PASSWORD: ${{ secrets.SMOKE_USER_PASSWORD }}
+          SMOKE_USER_ID: ${{ secrets.SMOKE_USER_ID }}
+          SMOKE_USER_B_EMAIL: ${{ secrets.SMOKE_USER_B_EMAIL }}
+          SMOKE_USER_B_PASSWORD: ${{ secrets.SMOKE_USER_B_PASSWORD }}
       - name: Run disposable-account smoke
         run: npm run test:e2e
         env:
@@ -53,3 +81,5 @@ jobs:
           SMOKE_USER_EMAIL: ${{ secrets.SMOKE_USER_EMAIL }}
           SMOKE_USER_PASSWORD: ${{ secrets.SMOKE_USER_PASSWORD }}
           SMOKE_USER_ID: ${{ secrets.SMOKE_USER_ID }}
+          SMOKE_USER_B_EMAIL: ${{ secrets.SMOKE_USER_B_EMAIL }}
+          SMOKE_USER_B_PASSWORD: ${{ secrets.SMOKE_USER_B_PASSWORD }}
