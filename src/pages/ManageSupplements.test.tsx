@@ -41,7 +41,6 @@ function renderPage() {
   return render(
     <MemoryRouter
       initialEntries={['/settings/supplements']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ManageSupplements />
     </MemoryRouter>,

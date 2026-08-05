@@ -13,7 +13,6 @@ function renderHub() {
   return render(
     <MemoryRouter
       initialEntries={['/log']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <LogHub />
     </MemoryRouter>,

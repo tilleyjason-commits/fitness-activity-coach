@@ -21,6 +21,7 @@ vi.mock('~/lib/db', () => ({
   getMealLogs: (...args: unknown[]) => getMealLogsMock(...args),
   getMealFoods: (...args: unknown[]) => getMealFoodsMock(...args),
   getProfile: () => Promise.resolve(null),
+  getRecentMeals: () => Promise.resolve([]),
   saveMeal: vi.fn(),
   deleteMeal: vi.fn(),
   calculateMacros: vi.fn(),
@@ -100,7 +101,6 @@ describe('MacroTrackerPage slot rendering', () => {
     render(
       <MemoryRouter
         initialEntries={['/macros']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <MacroTrackerPage />
       </MemoryRouter>,
@@ -123,7 +123,6 @@ describe('MacroTrackerPage slot rendering', () => {
     render(
       <MemoryRouter
         initialEntries={['/macros']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <MacroTrackerPage />
       </MemoryRouter>,
@@ -152,7 +151,6 @@ describe('MacroTrackerPage slot rendering', () => {
     render(
       <MemoryRouter
         initialEntries={['/macros']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <MacroTrackerPage />
       </MemoryRouter>,
@@ -172,7 +170,6 @@ describe('MacroTrackerPage slot rendering', () => {
     render(
       <MemoryRouter
         initialEntries={['/macros']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <MacroTrackerPage />
       </MemoryRouter>,

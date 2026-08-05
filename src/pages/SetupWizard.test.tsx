@@ -38,14 +38,13 @@ async function fillWizardToFinish() {
   render(
     <MemoryRouter
       initialEntries={['/setup']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <SetupWizard />
     </MemoryRouter>,
   );
 
   await user.type(screen.getByLabelText(/age/i), '40');
-  await user.type(screen.getByLabelText(/height/i), '180');
+  await user.type(screen.getByLabelText(/height/i), '72');
   await user.click(screen.getByRole('button', { name: /continue/i }));
 
   await user.type(screen.getByLabelText(/current weight/i), '210');
@@ -74,14 +73,13 @@ describe('SetupWizard training_time mapping', () => {
     render(
       <MemoryRouter
         initialEntries={['/setup']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <SetupWizard />
       </MemoryRouter>,
     );
 
     await user.type(screen.getByLabelText(/age/i), '40');
-    await user.type(screen.getByLabelText(/height/i), '180');
+    await user.type(screen.getByLabelText(/height/i), '72');
     await user.selectOptions(screen.getByLabelText(/i usually train/i), choice);
     await user.click(screen.getByRole('button', { name: /continue/i }));
     await user.type(screen.getByLabelText(/current weight/i), '210');
@@ -91,7 +89,7 @@ describe('SetupWizard training_time mapping', () => {
     // The summary keeps the human label, not the raw time.
     expect(screen.getByText(choice)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /let'?s go/i }));
+    await user.click(screen.getByRole('button', { name: /start first log/i }));
     const payload = upsertProfileMock.mock.calls[0][0] as Record<string, unknown>;
     expect(payload.training_time).toBe(expected);
   });
@@ -106,21 +104,22 @@ describe('SetupWizard save behavior', () => {
     upsertProfileMock.mockResolvedValue({ id: 'user-abc', user_id: 'user-abc' });
     const user = await fillWizardToFinish();
 
-    await user.click(screen.getByRole('button', { name: /let'?s go/i }));
+    await user.click(screen.getByRole('button', { name: /start first log/i }));
 
     expect(upsertProfileMock).toHaveBeenCalledTimes(1);
     const payload = upsertProfileMock.mock.calls[0][0] as Record<string, unknown>;
     expect(payload.id).toBe('user-abc');
     expect(payload.user_id).toBe('user-abc');
     expect(payload.age).toBe(40);
-    expect(navigateMock).toHaveBeenCalledWith('/');
+    expect(payload.height_cm).toBe(182.9);
+    expect(navigateMock).toHaveBeenCalledWith('/log');
   });
 
   it('stays on the wizard with an accessible retryable error when the save fails', async () => {
     upsertProfileMock.mockRejectedValue(new Error('null value in column "user_id"'));
     const user = await fillWizardToFinish();
 
-    await user.click(screen.getByRole('button', { name: /let'?s go/i }));
+    await user.click(screen.getByRole('button', { name: /start first log/i }));
 
     // Must NOT leave the page on failure.
     expect(navigateMock).not.toHaveBeenCalled();
@@ -135,8 +134,8 @@ describe('SetupWizard save behavior', () => {
 
     // Retry succeeds and only then navigates.
     upsertProfileMock.mockResolvedValue({ id: 'user-abc', user_id: 'user-abc' });
-    await user.click(screen.getByRole('button', { name: /let'?s go/i }));
+    await user.click(screen.getByRole('button', { name: /start first log/i }));
     expect(upsertProfileMock).toHaveBeenCalledTimes(2);
-    expect(navigateMock).toHaveBeenCalledWith('/');
+    expect(navigateMock).toHaveBeenCalledWith('/log');
   });
 });

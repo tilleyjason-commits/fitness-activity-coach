@@ -1,12 +1,29 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronRight, Loader2, LogOut, Moon, Pill, UserRound } from 'lucide-react';
+import { Bell, ChevronRight, Loader2, LogOut, Moon, Pill, UserRound } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { getProfile, upsertProfile } from '~/lib/db';
+import {
+  DEFAULT_REMINDER_PREFS,
+  getNotificationPermission,
+  getReminderPrefs,
+  isNotificationSupported,
+  requestReminderPermission,
+  saveReminderPrefs,
+  type ReminderCategory,
+  type ReminderPrefs,
+} from '~/lib/reminders';
 import { applyTheme, getStoredTheme, type Theme } from '~/lib/theme';
 import type { Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { ToggleRow } from '~/components/ToggleRow';
+
+const REMINDER_CATEGORY_LABELS: Record<ReminderCategory, string> = {
+  training: 'Training time',
+  snack: 'Afternoon snack',
+  caffeine: 'Caffeine cutoff',
+  bedtime: 'Bedtime wind-down',
+};
 
 function toStr(value: number | null | undefined): string {
   return value === null || value === undefined ? '' : String(value);
@@ -22,6 +39,8 @@ export default function Settings() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<Theme>(getStoredTheme());
+  const [reminderPrefs, setReminderPrefs] = useState<ReminderPrefs>(DEFAULT_REMINDER_PREFS);
+  const [reminderError, setReminderError] = useState<string | null>(null);
 
   const [age, setAge] = useState('');
   const [height, setHeight] = useState('');
@@ -61,6 +80,49 @@ export default function Settings() {
       active = false;
     };
   }, [user]);
+
+  // user.id (not the user object) — getReminderPrefs returns a freshly
+  // parsed object once real prefs exist, so an object-identity dependency on
+  // a `user` value that isn't reference-stable across renders would never
+  // stop re-firing (see the equivalent fix in MacroTrackerPage.tsx).
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    setReminderPrefs(getReminderPrefs(userId));
+  }, [userId]);
+
+  async function handleReminderMasterToggle(nextEnabled: boolean) {
+    if (!user) return;
+    setReminderError(null);
+    if (!nextEnabled) {
+      const next = { ...reminderPrefs, enabled: false };
+      setReminderPrefs(next);
+      saveReminderPrefs(user.id, next);
+      return;
+    }
+    if (!isNotificationSupported()) {
+      setReminderError('This browser does not support notifications.');
+      return;
+    }
+    const permission =
+      getNotificationPermission() === 'granted'
+        ? 'granted'
+        : await requestReminderPermission();
+    if (permission !== 'granted') {
+      setReminderError('Notifications are blocked — allow them in your browser/device settings to enable reminders.');
+      return;
+    }
+    const next = { ...reminderPrefs, enabled: true };
+    setReminderPrefs(next);
+    saveReminderPrefs(user.id, next);
+  }
+
+  function handleReminderCategoryToggle(category: ReminderCategory, checked: boolean) {
+    if (!user) return;
+    const next = { ...reminderPrefs, categories: { ...reminderPrefs.categories, [category]: checked } };
+    setReminderPrefs(next);
+    saveReminderPrefs(user.id, next);
+  }
 
   function handleThemeChange(dark: boolean) {
     const next: Theme = dark ? 'dark' : 'light';
@@ -128,6 +190,30 @@ export default function Settings() {
           onChange={handleThemeChange}
           icon={<Moon className="h-5 w-5" aria-hidden />}
         />
+      </section>
+
+      <section className="mb-4" aria-label="Reminders">
+        <h2 className="section-title">Coach reminders</h2>
+        <ToggleRow
+          label="Reminders"
+          description="Nudges for training, snacks, caffeine cutoff, and bedtime — only while the app is open"
+          checked={reminderPrefs.enabled}
+          onChange={(checked) => void handleReminderMasterToggle(checked)}
+          icon={<Bell className="h-5 w-5" aria-hidden />}
+        />
+        {reminderError && <p className="mt-2 text-sm text-red-500">{reminderError}</p>}
+        {reminderPrefs.enabled && (
+          <div className="mt-2 space-y-2">
+            {(Object.keys(REMINDER_CATEGORY_LABELS) as ReminderCategory[]).map((category) => (
+              <ToggleRow
+                key={category}
+                label={REMINDER_CATEGORY_LABELS[category]}
+                checked={reminderPrefs.categories[category]}
+                onChange={(checked) => handleReminderCategoryToggle(category, checked)}
+              />
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mb-4" aria-label="Tools">

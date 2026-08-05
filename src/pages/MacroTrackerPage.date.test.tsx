@@ -19,6 +19,7 @@ vi.mock('~/lib/db', () => ({
   getMealLogs: () => Promise.resolve([]),
   getMealFoods: () => Promise.resolve([]),
   getProfile: () => Promise.resolve(null),
+  getRecentMeals: () => Promise.resolve([]),
   saveMeal: vi.fn(),
   deleteMeal: vi.fn(),
   calculateMacros: vi.fn(),
@@ -39,7 +40,6 @@ function renderPage() {
   return render(
     <MemoryRouter
       initialEntries={['/macros']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <MacroTrackerPage />
     </MemoryRouter>,

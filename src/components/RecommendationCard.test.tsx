@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { RecommendationCard } from './RecommendationCard';
 
 /**
@@ -31,5 +32,24 @@ describe('RecommendationCard accessibility', () => {
     render(<RecommendationCard severity="high" message="Msg" domain="nutrition" />);
     expect(screen.getByText('High').className).toMatch(/text-xs/);
     expect(screen.getByText('nutrition').className).toMatch(/text-xs/);
+  });
+
+  it('surfaces an action link and evidence disclosure when provided', () => {
+    render(
+      <MemoryRouter>
+        <RecommendationCard
+          severity="medium"
+          message="Caffeine was late."
+          domain="sleep"
+          actionTo="/log/sleep"
+          actionLabel="Log sleep"
+          evidence="Caffeine near bedtime can reduce sleep quality."
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: /log sleep/i })).toHaveAttribute('href', '/log/sleep');
+    expect(screen.getByText(/why this advice/i)).toBeInTheDocument();
+    expect(screen.getByText(/caffeine near bedtime/i)).toBeInTheDocument();
   });
 });

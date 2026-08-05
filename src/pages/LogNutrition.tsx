@@ -1,11 +1,13 @@
-﻿import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ChevronRight, Loader2, Minus, Plus, Sparkles } from 'lucide-react';
+import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
+import { getProfile } from '~/lib/db';
 import { toHHMM } from '~/lib/evaluate';
-import { MEAL_TIMING, TARGETS } from '~/lib/constants';
-import type { DailyLog } from '~/lib/types';
+import { resolveMealTiming, resolveTargets } from '~/lib/constants';
+import type { DailyLog, Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { ToggleRow } from '~/components/ToggleRow';
 
@@ -56,8 +58,10 @@ function Stepper({ label, value, min, max, onChange }: StepperProps) {
 
 export default function LogNutrition() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const today = format(new Date(), 'yyyy-MM-dd');
   const { log, loading, saving, error, save } = useDailyLog(today);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const [protein, setProtein] = useState('');
   const [calories, setCalories] = useState('');
@@ -71,6 +75,16 @@ export default function LogNutrition() {
   const [dinnerPlates, setDinnerPlates] = useState(1);
   const [proteinFirst, setProteinFirst] = useState(false);
   const [candy, setCandy] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    getProfile(user.id)
+      .then(setProfile)
+      .catch(() => setProfile(null));
+  }, [user]);
+
+  const timing = resolveMealTiming(profile);
+  const targets = resolveTargets(profile);
 
   useEffect(() => {
     if (!log) return;
@@ -92,7 +106,7 @@ export default function LogNutrition() {
   const proteinStatus =
     proteinValue === null
       ? 'text-slate-500 dark:text-slate-400'
-      : proteinValue >= TARGETS.proteinMinG && proteinValue <= TARGETS.proteinMaxG + 30
+      : proteinValue >= targets.proteinMinG && proteinValue <= targets.proteinMaxG + 30
         ? 'text-emerald-600 dark:text-emerald-400'
         : 'text-amber-600 dark:text-amber-400';
 
@@ -146,7 +160,7 @@ export default function LogNutrition() {
           <span className={`text-sm font-semibold tabular-nums ${proteinStatus}`}>
             {proteinValue ?? 'â€”'} g
             <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
-              / {TARGETS.proteinMinG}â€“{TARGETS.proteinMaxG} g
+              / {targets.proteinMinG}–{targets.proteinMaxG} g
             </span>
           </span>
         </div>
@@ -187,7 +201,7 @@ export default function LogNutrition() {
               min={0}
               value={calories}
               onChange={(e) => setCalories(e.target.value)}
-              placeholder={String(TARGETS.calories)}
+              placeholder={String(targets.calories)}
               className="field px-2"
             />
           </div>
@@ -202,7 +216,7 @@ export default function LogNutrition() {
               min={0}
               value={carbs}
               onChange={(e) => setCarbs(e.target.value)}
-              placeholder={String(TARGETS.carbsG)}
+              placeholder={String(targets.carbsG)}
               className="field px-2"
             />
           </div>
@@ -217,7 +231,7 @@ export default function LogNutrition() {
               min={0}
               value={fat}
               onChange={(e) => setFat(e.target.value)}
-              placeholder={String(TARGETS.fatG)}
+              placeholder={String(targets.fatG)}
               className="field px-2"
             />
           </div>
@@ -239,7 +253,7 @@ export default function LogNutrition() {
               className="field"
             />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              target ~{MEAL_TIMING.preGymSnack}
+              target ~{timing.preGymSnack}
             </p>
           </div>
           <div>
@@ -254,7 +268,7 @@ export default function LogNutrition() {
               className="field"
             />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              target ~{MEAL_TIMING.postGymMeal}
+              target ~{timing.postGymMeal}
             </p>
           </div>
         </div>
@@ -264,13 +278,13 @@ export default function LogNutrition() {
         <h2 className="section-title">Habits</h2>
         <ToggleRow
           label="3pm snack taken"
-          description={`Planned for ${MEAL_TIMING.snack3pm}`}
+          description={`Planned for ${timing.snack3pm}`}
           checked={snack3pm}
           onChange={setSnack3pm}
         />
         <ToggleRow
           label="Casein taken"
-          description={`Before bed, ~${MEAL_TIMING.casein}`}
+          description={`Before bed, ~${timing.casein}`}
           checked={casein}
           onChange={setCasein}
         />

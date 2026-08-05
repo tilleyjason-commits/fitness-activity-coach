@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import { Clock, Loader2, Pencil, Plus, Sparkles, Star, Trash2, X } from 'lucide-react';
 import { MEAL_SLOT_ICONS, MEAL_SLOT_LABELS, MEAL_SLOT_TIMES } from '~/lib/constants';
 import { toHHMM } from '~/lib/evaluate';
+import type { FavoriteFood, MealFavorite } from '~/lib/meal-favorites';
 import type { MacrosFromAI, MealFood, MealLog, MealSlot } from '~/lib/types';
+
+export type MealSlotTimeMeta = { start: string; hint: string };
 
 type CardState = 'idle' | 'calculating' | 'results' | 'saved' | 'error';
 
@@ -35,15 +38,31 @@ export interface MealSaveInput {
   }[];
 }
 
+/** A prior meal (favorited or recently logged) offered as a one-tap re-log. */
+export interface QuickAddOption {
+  label: string;
+  mealTime: string | null;
+  foods: FavoriteFood[];
+}
+
 interface MealCardProps {
   slot: MealSlot;
   /** Saved row for this slot, if any. */
   mealLog: MealLog | null;
   /** Saved food rows belonging to mealLog. */
   foods: MealFood[];
+  /** Profile-resolved slot times; defaults to the Jason baseline schedule. */
+  slotTimes?: Record<MealSlot, MealSlotTimeMeta>;
   onCalculate: (description: string, slot: MealSlot) => Promise<MacrosFromAI>;
   onSave: (slot: MealSlot, input: MealSaveInput) => Promise<void>;
   onClear: (slot: MealSlot) => Promise<void>;
+  /** Favorited meals for this slot, newest first — one-tap re-log without AI. */
+  favorites?: MealFavorite[];
+  /** Recently logged meals for this slot (deduped), most recent first. */
+  recents?: QuickAddOption[];
+  /** True when the currently saved meal is already in favorites. */
+  isFavorited?: boolean;
+  onToggleFavorite?: () => void;
 }
 
 function toDraft(food: MealFood): FoodDraft {
@@ -109,12 +128,64 @@ const CONFIDENCE_DOT: Record<'high' | 'medium' | 'low', string> = {
   low: 'bg-red-500',
 };
 
+interface QuickAddChip extends QuickAddOption {
+  kind: 'favorite' | 'recent';
+}
+
+/** One-tap re-log row: favorited meals (starred) and recent meals (clock). */
+function QuickAddChips({
+  chips,
+  disabled,
+  slotLabel,
+  onSelect,
+}: {
+  chips: QuickAddChip[];
+  disabled: boolean;
+  slotLabel: string;
+  onSelect: (chip: QuickAddChip) => void;
+}) {
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Quick add ${slotLabel}`}>
+      {chips.map((chip) => (
+        <button
+          key={`${chip.kind}-${chip.label}`}
+          type="button"
+          onClick={() => onSelect(chip)}
+          disabled={disabled}
+          className="flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 transition-colors hover:border-emerald-400 hover:text-emerald-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-emerald-500/60 dark:hover:text-emerald-400"
+        >
+          {chip.kind === 'favorite' ? (
+            <Star className="h-3.5 w-3.5 shrink-0 fill-amber-500 text-amber-500" aria-hidden />
+          ) : (
+            <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          )}
+          {chip.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** One meal slot: describe → AI calculate → edit → save into meal_logs. */
-export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }: MealCardProps) {
+export function MealCard({
+  slot,
+  mealLog,
+  foods,
+  slotTimes = MEAL_SLOT_TIMES,
+  onCalculate,
+  onSave,
+  onClear,
+  favorites = [],
+  recents = [],
+  isFavorited = false,
+  onToggleFavorite,
+}: MealCardProps) {
+  const slotMeta = slotTimes[slot] ?? MEAL_SLOT_TIMES[slot];
   const [state, setState] = useState<CardState>(mealLog ? 'saved' : 'idle');
   const [description, setDescription] = useState(mealLog?.raw_input ?? '');
   const [mealTime, setMealTime] = useState(
-    toHHMM(mealLog?.meal_time ?? null) ?? MEAL_SLOT_TIMES[slot].start,
+    toHHMM(mealLog?.meal_time ?? null) ?? slotMeta.start,
   );
   const [drafts, setDrafts] = useState<FoodDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -132,12 +203,12 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
   useEffect(() => {
     if (mealLog) {
       setDescription(mealLog.raw_input ?? '');
-      setMealTime(toHHMM(mealLog.meal_time) ?? MEAL_SLOT_TIMES[slot].start);
+      setMealTime(toHHMM(mealLog.meal_time) ?? slotMeta.start);
       setState('saved');
       setExpanded(true);
     } else {
       setDescription('');
-      setMealTime(MEAL_SLOT_TIMES[slot].start);
+      setMealTime(slotMeta.start);
       setDrafts([]);
       setState('idle');
       setExpanded(false);
@@ -145,7 +216,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
     setError(null);
     setProviderNotice(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mealLog?.id]);
+  }, [mealLog?.id, slotMeta.start]);
 
   async function handleCalculate() {
     const trimmed = description.trim();
@@ -219,6 +290,26 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
     }
   }
 
+  /** One-tap re-log a favorited or recent meal — skips AI and manual entry entirely. */
+  async function handleQuickLog(option: QuickAddOption) {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(slot, {
+        rawInput: option.label,
+        mealTime: option.mealTime ?? mealTime,
+        foods: option.foods,
+      });
+      setState('saved');
+      setExpanded(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save meal');
+      setState('error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function startEdit() {
     setDrafts(foods.map(toDraft));
     setState('results');
@@ -243,6 +334,15 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
   const busy = state === 'calculating' || saving;
   const SlotIcon = MEAL_SLOT_ICONS[slot];
 
+  // Favorites first, then recents not already favorited — one-tap re-log,
+  // capped so the row never crowds out the rest of the slot.
+  const quickAddChips: QuickAddChip[] = [
+    ...favorites.map((f) => ({ label: f.label, mealTime: f.mealTime, foods: f.foods, kind: 'favorite' as const })),
+    ...recents
+      .filter((r) => !favorites.some((f) => f.label === r.label))
+      .map((r) => ({ ...r, kind: 'recent' as const })),
+  ].slice(0, 4);
+
   // Empty + untouched: a one-line row keeps seven slots on one screen.
   if (state === 'idle' && !mealLog && !expanded) {
     return (
@@ -257,11 +357,21 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</span>
             <span className="block text-xs text-slate-500 dark:text-slate-400">
-              {MEAL_SLOT_TIMES[slot].hint}
+              {slotMeta.hint}
             </span>
           </span>
           <Plus className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
         </button>
+        {quickAddChips.length > 0 && (
+          <div className="mt-1.5 pl-0.5">
+            <QuickAddChips
+              chips={quickAddChips}
+              disabled={busy}
+              slotLabel={MEAL_SLOT_LABELS[slot]}
+              onSelect={(chip) => void handleQuickLog(chip)}
+            />
+          </div>
+        )}
       </section>
     );
   }
@@ -274,18 +384,34 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                 <div>
                   <h2 className="text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {MEAL_SLOT_TIMES[slot].hint}
+                    {slotMeta.hint}
                   </p>
                 </div>
               </div>
-              <input
-                type="time"
-                value={mealTime}
-                onChange={(e) => setMealTime(e.target.value)}
-                disabled={busy || state === 'saved'}
-                aria-label={`${MEAL_SLOT_LABELS[slot]} time`}
-                className="field w-auto px-2 py-1.5 text-sm"
-              />
+              <div className="flex shrink-0 items-center gap-1.5">
+                {state === 'saved' && onToggleFavorite && (
+                  <button
+                    type="button"
+                    onClick={onToggleFavorite}
+                    aria-pressed={isFavorited}
+                    aria-label={isFavorited ? 'Remove from favorites' : 'Save as favorite'}
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-amber-500 dark:hover:bg-slate-700/60"
+                  >
+                    <Star
+                      className={`h-4 w-4 ${isFavorited ? 'fill-amber-500 text-amber-500' : ''}`}
+                      aria-hidden
+                    />
+                  </button>
+                )}
+                <input
+                  type="time"
+                  value={mealTime}
+                  onChange={(e) => setMealTime(e.target.value)}
+                  disabled={busy || state === 'saved'}
+                  aria-label={`${MEAL_SLOT_LABELS[slot]} time`}
+                  className="field w-auto px-2 py-1.5 text-sm"
+                />
+              </div>
             </header>
 
             {providerNotice && (
@@ -388,6 +514,16 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
         </>
       ) : (
         <>
+          {state === 'idle' && quickAddChips.length > 0 && (
+            <div className="mb-3">
+              <QuickAddChips
+                chips={quickAddChips}
+                disabled={busy}
+                slotLabel={MEAL_SLOT_LABELS[slot]}
+                onSelect={(chip) => void handleQuickLog(chip)}
+              />
+            </div>
+          )}
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
