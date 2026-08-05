@@ -197,13 +197,13 @@ export interface MacrosFromAI {
     carbs_g: number;
     fat_g: number;
   };
-  /** Which stack produced the answer (nvidia primary, deepseek fallback). */
-  provider?: 'nvidia' | 'deepseek';
+  /** Which stack produced the answer (OpenRouter primary, NVIDIA fallback). */
+  provider?: 'openrouter' | 'nvidia';
   /** Exact model id used for the successful calculation. */
   model?: string;
-  /** True when DeepSeek served after NVIDIA failed — always surface in UI. */
+  /** True when NVIDIA served after OpenRouter failed — always surface in UI. */
   fallback?: boolean;
-  /** Short machine/human reason NVIDIA failed (present when fallback is true). */
+  /** Short machine/human reason OpenRouter failed (present when fallback is true). */
   fallback_reason?: string;
 }
 
