@@ -28,7 +28,10 @@ function makeExercise(overrides: Partial<WorkoutExercise> = {}): WorkoutExercise
   };
 }
 
-function renderTracker(exercises: WorkoutExercise[]) {
+function renderTracker(
+  exercises: WorkoutExercise[],
+  pastByExerciseId?: Record<string, { reps: number; weight: number; rir: number | null }[]>,
+) {
   return render(
     <WorkoutTracker
       exercises={exercises}
@@ -36,6 +39,7 @@ function renderTracker(exercises: WorkoutExercise[]) {
       onLogSet={onLogSet}
       onRemoveExercise={onRemoveExercise}
       onRemoveCardioExercise={onRemoveCardioExercise}
+      pastByExerciseId={pastByExerciseId}
     />,
   );
 }
@@ -101,5 +105,45 @@ describe('quick-complete set tiles', () => {
     expect(complete.className).toMatch(/min-h-11/);
     expect(edit.className).toMatch(/min-h-11/);
     expect(edit.className).toMatch(/min-w-11/);
+  });
+});
+
+describe('progressive-overload "beat last" chip', () => {
+  it('shows a beat-last suggestion and applies it on tap', async () => {
+    const user = userEvent.setup();
+    renderTracker([makeExercise()], {
+      'leg-press': [{ reps: 10, weight: 90, rir: 2 }],
+    });
+
+    await user.click(screen.getByRole('button', { name: /edit set 1/i }));
+    expect(screen.getByText(/beat last: 10 × 90 lb/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /beat last/i }));
+    await user.click(screen.getByRole('button', { name: 'Log Set' }));
+
+    // RIR here is the sheet's own default (unrelated set has no RIR logged yet) —
+    // the chip only overrides reps/weight, per suggestNextSet's contract.
+    expect(onLogSet).toHaveBeenCalledWith(0, 0, 11, 90, 2);
+  });
+
+  it('suggests a weight step instead of another rep once last time hit failure', async () => {
+    const user = userEvent.setup();
+    renderTracker([makeExercise()], {
+      'leg-press': [{ reps: 10, weight: 90, rir: 0 }],
+    });
+
+    await user.click(screen.getByRole('button', { name: /edit set 1/i }));
+    await user.click(screen.getByRole('button', { name: /beat last/i }));
+    await user.click(screen.getByRole('button', { name: 'Log Set' }));
+
+    expect(onLogSet).toHaveBeenCalledWith(0, 0, 10, 95, 2);
+  });
+
+  it('shows no suggestion without a prior session for this exercise', async () => {
+    const user = userEvent.setup();
+    renderTracker([makeExercise()]);
+
+    await user.click(screen.getByRole('button', { name: /edit set 1/i }));
+    expect(screen.queryByText(/beat last/i)).not.toBeInTheDocument();
   });
 });
