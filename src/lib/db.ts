@@ -280,6 +280,35 @@ export async function getMealFoods(mealLogIds: string[]): Promise<MealFood[]> {
   return (data ?? []) as MealFood[];
 }
 
+export interface RecentMeal {
+  log: MealLog;
+  foods: MealFood[];
+}
+
+/**
+ * The signed-in user's most recently logged meals across all slots (RLS
+ * scopes this to auth.uid() the same way every other meal_logs read does).
+ * Callers group/dedupe by slot client-side — this is a "recents" feed, not
+ * a per-slot query, so one round trip covers all seven slots.
+ */
+export async function getRecentMeals(limit = 60): Promise<RecentMeal[]> {
+  const { data: logs, error } = await supabase
+    .from('meal_logs')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  const mealLogs = (logs ?? []) as MealLog[];
+  const foods = await getMealFoods(mealLogs.map((l) => l.id));
+  const foodsByMealId = new Map<string, MealFood[]>();
+  for (const food of foods) {
+    const list = foodsByMealId.get(food.meal_log_id) ?? [];
+    list.push(food);
+    foodsByMealId.set(food.meal_log_id, list);
+  }
+  return mealLogs.map((log) => ({ log, foods: foodsByMealId.get(log.id) ?? [] }));
+}
+
 /** One meal slot's worth of user input, saved as a single aggregate. */
 export interface MealSaveData {
   rawInput: string;

@@ -9,13 +9,51 @@ import {
   getMealFoods,
   getMealLogs,
   getProfile,
+  getRecentMeals,
   saveMeal,
+  type RecentMeal,
 } from '~/lib/db';
 import { MEAL_SLOTS, getMealSlotTimes, resolveMealTiming, resolveTargets } from '~/lib/constants';
+import {
+  addFavorite,
+  getFavoritesForSlot,
+  removeFavorite,
+  type MealFavorite,
+} from '~/lib/meal-favorites';
 import type { MealFood, MealLog, MealSlot, Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
-import { MealCard, type MealSaveInput } from '~/components/MealCard';
+import { MealCard, type MealSaveInput, type QuickAddOption } from '~/components/MealCard';
 import { DayMacroSummary } from '~/components/DayMacroSummary';
+
+const MAX_RECENTS_PER_SLOT = 3;
+
+/** Most recent distinct meals per slot (by description), newest first. */
+function groupRecentsBySlot(recent: RecentMeal[]): Record<MealSlot, QuickAddOption[]> {
+  const bySlot = {} as Record<MealSlot, QuickAddOption[]>;
+  for (const slot of MEAL_SLOTS) bySlot[slot] = [];
+  for (const { log, foods } of recent) {
+    const label = log.raw_input?.trim();
+    if (!label || foods.length === 0) continue;
+    const forSlot = bySlot[log.meal_slot];
+    if (forSlot.length >= MAX_RECENTS_PER_SLOT) continue;
+    if (forSlot.some((r) => r.label === label)) continue;
+    forSlot.push({
+      label,
+      mealTime: log.meal_time,
+      foods: foods.map((f) => ({
+        food_name: f.food_name,
+        quantity: f.quantity,
+        unit: f.unit,
+        calories: f.calories,
+        protein_g: f.protein_g,
+        carbs_g: f.carbs_g,
+        fat_g: f.fat_g,
+        confidence: f.confidence,
+      })),
+    });
+  }
+  return bySlot;
+}
 
 /** AI-powered per-meal macro tracker: the canonical MEAL_SLOTS summing into daily_logs. */
 export default function MacroTrackerPage() {
@@ -28,6 +66,12 @@ export default function MacroTrackerPage() {
   const [mealFoods, setMealFoods] = useState<MealFood[]>([]);
   const [mealsLoading, setMealsLoading] = useState(false);
   const [pageError, setPageError] = useState<string | null>(null);
+  const [recentsBySlot, setRecentsBySlot] = useState<Record<MealSlot, QuickAddOption[]>>(
+    () => groupRecentsBySlot([]),
+  );
+  const [favoritesBySlot, setFavoritesBySlot] = useState<Record<MealSlot, MealFavorite[]>>(
+    () => ({}) as Record<MealSlot, MealFavorite[]>,
+  );
 
   useEffect(() => {
     if (!user) return;
@@ -35,6 +79,30 @@ export default function MacroTrackerPage() {
       .then(setProfile)
       .catch(() => setProfile(null));
   }, [user]);
+
+  // Recents span every logged day (not just the selected one), so they only
+  // need to load once per visit — a slot-scoped "quick add" list, not a
+  // per-date view. Depends on user.id (not the user object) so a caller
+  // whose auth value is a fresh object every render — the real AuthContext
+  // memoizes it, but this must not assume every consumer does — can't turn
+  // this into a fetch-loop: groupRecentsBySlot always returns a new object
+  // reference, so an object-identity dependency would never stop re-firing.
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    getRecentMeals()
+      .then((recent) => setRecentsBySlot(groupRecentsBySlot(recent)))
+      .catch(() => setRecentsBySlot(groupRecentsBySlot([])));
+  }, [userId]);
+
+  // Favorites are local-only (see meal-favorites.ts) — read once per user,
+  // then kept in sync locally on toggle without re-reading localStorage.
+  useEffect(() => {
+    if (!userId) return;
+    const bySlot = {} as Record<MealSlot, MealFavorite[]>;
+    for (const slot of MEAL_SLOTS) bySlot[slot] = getFavoritesForSlot(userId, slot);
+    setFavoritesBySlot(bySlot);
+  }, [userId]);
 
   const targets = resolveTargets(profile);
   const slotTimes = getMealSlotTimes(resolveMealTiming(profile));
@@ -83,6 +151,38 @@ export default function MacroTrackerPage() {
     if (!log) return;
     await deleteMeal(log.id, slot);
     await Promise.all([loadMeals(log.id), reload()]);
+  }
+
+  /** Add/remove the currently saved meal for this slot from local favorites. */
+  function handleToggleFavorite(slot: MealSlot, mealLog: MealLog, foods: MealFood[]) {
+    if (!user || !mealLog.raw_input) return;
+    const userId = user.id;
+    const existing = favoritesBySlot[slot] ?? [];
+    const match = existing.find((f) => f.label === mealLog.raw_input);
+    if (match) {
+      removeFavorite(userId, match.id);
+      setFavoritesBySlot((prev) => ({
+        ...prev,
+        [slot]: (prev[slot] ?? []).filter((f) => f.id !== match.id),
+      }));
+      return;
+    }
+    const created = addFavorite(userId, {
+      slot,
+      label: mealLog.raw_input,
+      mealTime: mealLog.meal_time,
+      foods: foods.map((f) => ({
+        food_name: f.food_name,
+        quantity: f.quantity,
+        unit: f.unit,
+        calories: f.calories,
+        protein_g: f.protein_g,
+        carbs_g: f.carbs_g,
+        fat_g: f.fat_g,
+        confidence: f.confidence,
+      })),
+    });
+    setFavoritesBySlot((prev) => ({ ...prev, [slot]: [...(prev[slot] ?? []), created] }));
   }
 
   const dayTotals = mealLogs.reduce(
@@ -167,16 +267,27 @@ export default function MacroTrackerPage() {
         <>
           {MEAL_SLOTS.map((slot) => {
             const mealLog = mealBySlot.get(slot) ?? null;
+            const slotFoods = mealLog ? (foodsByMealId.get(mealLog.id) ?? []) : [];
+            const slotFavorites = favoritesBySlot[slot] ?? [];
             return (
               <MealCard
                 key={`${date}-${slot}`}
                 slot={slot}
                 mealLog={mealLog}
-                foods={mealLog ? (foodsByMealId.get(mealLog.id) ?? []) : []}
+                foods={slotFoods}
                 slotTimes={slotTimes}
                 onCalculate={calculateMacros}
                 onSave={handleSave}
                 onClear={handleClear}
+                favorites={slotFavorites}
+                recents={recentsBySlot[slot] ?? []}
+                isFavorited={
+                  mealLog?.raw_input != null &&
+                  slotFavorites.some((f) => f.label === mealLog.raw_input)
+                }
+                onToggleFavorite={
+                  mealLog ? () => handleToggleFavorite(slot, mealLog, slotFoods) : undefined
+                }
               />
             );
           })}
