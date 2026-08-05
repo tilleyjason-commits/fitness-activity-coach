@@ -51,7 +51,7 @@ export interface RateLimitDecision {
 }
 
 export interface ProviderAttempt {
-  /** Machine id for the serving stack (nvidia | deepseek). */
+  /** Machine id for the serving stack (openrouter | nvidia). */
   provider: MacroProviderId;
   /** Exact model id sent to the provider. */
   model: string;
@@ -66,10 +66,10 @@ export interface MacroHandlerDeps {
    * is within quota. Server-enforced (DB RPC) — never process memory.
    */
   consumeRateLimit: (userId: string, authHeader: string) => Promise<RateLimitDecision>;
-  /** Primary provider (NVIDIA). */
+  /** Primary provider (OpenRouter). */
   callPrimaryProvider: (description: string, mealSlot: MealSlot) => Promise<ProviderAttempt>;
   /**
-   * Fallback provider (DeepSeek). Return null when the fallback key is not
+   * Fallback provider (NVIDIA). Return null when the fallback key is not
    * configured so the handler can report a clear dual-failure.
    */
   callFallbackProvider: (description: string, mealSlot: MealSlot) => Promise<ProviderAttempt | null>;
@@ -291,13 +291,13 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
         );
       }
 
-      // 4. NVIDIA first.
+      // 4. OpenRouter first.
       let primary: ProviderAttempt | null = null;
-      let primaryError = 'NVIDIA was unreachable.';
+      let primaryError = 'OpenRouter was unreachable.';
       try {
         primary = await deps.callPrimaryProvider(description, mealSlot);
         if (!primary.response.ok && (primary.response.status === 429 || primary.response.status >= 500)) {
-          deps.log(`calculate-macros nvidia transient status=${primary.response.status}; retrying once`);
+          deps.log(`calculate-macros openrouter transient status=${primary.response.status}; retrying once`);
           await new Promise((r) => setTimeout(r, 800));
           primary = await deps.callPrimaryProvider(description, mealSlot);
         }
@@ -311,24 +311,24 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
               fallback: false,
             });
           } catch {
-            deps.log('calculate-macros nvidia output unparseable; trying deepseek fallback');
-            primaryError = 'NVIDIA returned unparseable output.';
+            deps.log('calculate-macros openrouter output unparseable; trying nvidia fallback');
+            primaryError = 'OpenRouter returned unparseable output.';
           }
         } else {
-          deps.log(`calculate-macros nvidia error status=${primary.response.status}`);
-          primaryError = providerFailureMessage(primary.response.status, 'NVIDIA');
+          deps.log(`calculate-macros openrouter error status=${primary.response.status}`);
+          primaryError = providerFailureMessage(primary.response.status, 'OpenRouter');
         }
       } catch {
-        deps.log('calculate-macros nvidia network failure; trying deepseek fallback');
-        primaryError = 'NVIDIA was unreachable.';
+        deps.log('calculate-macros openrouter network failure; trying nvidia fallback');
+        primaryError = 'OpenRouter was unreachable.';
       }
 
-      // 5. DeepSeek fallback — always announced in the success body.
+      // 5. NVIDIA fallback — always announced in the success body.
       let fallback: ProviderAttempt | null = null;
       try {
         fallback = await deps.callFallbackProvider(description, mealSlot);
       } catch {
-        deps.log('calculate-macros deepseek network failure');
+        deps.log('calculate-macros nvidia network failure');
         fallback = null;
       }
 
@@ -336,13 +336,13 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
         return errorResponse(
           503,
           'provider_unavailable',
-          `${primaryError} DeepSeek fallback is not configured (set DEEPSEEK_API_KEY). Enter macros manually.`,
+          `${primaryError} NVIDIA fallback is not configured (set NVIDIA_API_KEY). Enter macros manually.`,
         );
       }
 
       if (!fallback.response.ok) {
-        deps.log(`calculate-macros deepseek error status=${fallback.response.status}`);
-        const fallbackError = providerFailureMessage(fallback.response.status, 'DeepSeek');
+        deps.log(`calculate-macros nvidia error status=${fallback.response.status}`);
+        const fallbackError = providerFailureMessage(fallback.response.status, 'NVIDIA');
         return errorResponse(
           503,
           'provider_unavailable',
@@ -360,11 +360,11 @@ export function createMacroHandler(deps: MacroHandlerDeps) {
           fallback_reason: primaryError,
         });
       } catch {
-        deps.log('calculate-macros deepseek output unparseable');
+        deps.log('calculate-macros nvidia output unparseable');
         return errorResponse(
           502,
           'provider_invalid_output',
-          `${primaryError} DeepSeek also returned unreadable output. Enter macros manually.`,
+          `${primaryError} NVIDIA also returned unreadable output. Enter macros manually.`,
         );
       }
     } catch {

@@ -12,7 +12,7 @@ import {
 /**
  * Unit tests for the calculate-macros Edge Function core. The handler is
  * dependency-injected so these tests cover auth rejection, rate limiting,
- * NVIDIA→DeepSeek fallback (never silent), provider failure mapping, and
+ * OpenRouter→NVIDIA fallback (never silent), provider failure mapping, and
  * log hygiene without Deno or network access.
  */
 
