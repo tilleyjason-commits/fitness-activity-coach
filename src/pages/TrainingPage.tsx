@@ -123,13 +123,14 @@ export default function TrainingPage() {
 
   useEffect(() => {
     if (!user) return;
+    const userId = user.id;
     const controller = createAutosaveController<WorkoutStateType>(
-      (snapshot) => saveWorkoutWithOfflineQueue(snapshot, saveWorkoutState),
+      (snapshot) => saveWorkoutWithOfflineQueue(userId, snapshot, saveWorkoutState),
       { debounceMs: 1200 },
     );
-    // Drain any offline-queued saves from earlier sessions.
-    if (hasPendingWorkoutSaves()) {
-      void flushWorkoutSaveQueue(saveWorkoutState).then((result) => {
+    // Drain any offline-queued saves from earlier sessions for this user only.
+    if (hasPendingWorkoutSaves(userId)) {
+      void flushWorkoutSaveQueue(userId, saveWorkoutState).then((result) => {
         if (result.flushed > 0) {
           setAutosaveState({ status: 'saved', error: null });
         } else if (result.lastError) {
