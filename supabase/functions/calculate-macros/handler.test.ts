@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createMacroHandler,
+  MAX_DESCRIPTION_CHARS,
+  MAX_FOODS,
+  MAX_REQUEST_BYTES,
+  normalizeFoods,
   type MacroHandlerDeps,
   type ProviderAttempt,
 } from './handler';
@@ -8,7 +12,7 @@ import {
 /**
  * Unit tests for the calculate-macros Edge Function core. The handler is
  * dependency-injected so these tests cover auth rejection, rate limiting,
- * NVIDIA→DeepSeek fallback (never silent), provider failure mapping, and
+ * OpenRouter→NVIDIA fallback (never silent), provider failure mapping, and
  * log hygiene without Deno or network access.
  */
 
@@ -218,6 +222,41 @@ describe('calculate-macros handler', () => {
     expect(res.status).toBe(400);
     expect(deps.consumeRateLimit).not.toHaveBeenCalled();
     expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
+  });
+
+  it('rejects oversized descriptions before rate limiting or provider access', async () => {
+    const handler = createMacroHandler(deps);
+    const res = await handler(
+      post({ description: 'x'.repeat(MAX_DESCRIPTION_CHARS + 1), meal_slot: 'lunch' }, AUTH),
+    );
+    expect(res.status).toBe(400);
+    expect(deps.consumeRateLimit).not.toHaveBeenCalled();
+    expect(deps.callPrimaryProvider).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-string descriptions before rate limiting', async () => {
+    const handler = createMacroHandler(deps);
+    const res = await handler(post({ description: { text: DESCRIPTION }, meal_slot: 'lunch' }, AUTH));
+    expect(res.status).toBe(400);
+    expect(deps.consumeRateLimit).not.toHaveBeenCalled();
+  });
+
+  it('rejects request bodies over the byte limit before rate limiting', async () => {
+    const handler = createMacroHandler(deps);
+    const req = post(VALID_BODY, { ...AUTH, 'Content-Length': String(MAX_REQUEST_BYTES + 1) });
+    const res = await handler(req);
+    expect(res.status).toBe(400);
+    expect(deps.consumeRateLimit).not.toHaveBeenCalled();
+  });
+
+  it('rejects excessive or unsafe provider foods instead of coercing them', () => {
+    expect(() => normalizeFoods(Array.from({ length: MAX_FOODS + 1 }, () => SAMPLE_FOODS.foods[0])))
+      .toThrow(/1-25 foods/);
+    expect(() => normalizeFoods([{ ...SAMPLE_FOODS.foods[0], calories: -1 }])).toThrow(
+      /out-of-range calories/,
+    );
+    expect(() => normalizeFoods([{ ...SAMPLE_FOODS.foods[0], food_name: 'x'.repeat(121) }]))
+      .toThrow(/invalid food_name/);
   });
 
   it('never logs the meal description, auth header, or provider body', async () => {

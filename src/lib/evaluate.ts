@@ -1,5 +1,12 @@
 import rulesJson from '../../rules/rules.json';
-import { MEAL_TIMING, muscleForExercise, resolveMealTiming, resolveTargets } from './constants';
+import {
+  MEAL_TIMING,
+  addMinutesToHhmm,
+  muscleForExercise,
+  postGymMealDeadline,
+  resolveMealTiming,
+  resolveTargets,
+} from './constants';
 import type { DailyLog, ExerciseLog, Profile, Severity } from './types';
 import { SEVERITY_ORDER } from './types';
 
@@ -542,6 +549,23 @@ export function buildContext(
     target_protein_max: targets.proteinMaxG,
     target_carbs: targets.carbsG,
     target_fat: targets.fatG,
+
+    // Profile-driven timing windows (rules must use these — never clock literals)
+    caffeine_cutoff: timing.caffeineCutoff,
+    target_bedtime: timing.bedtime,
+    target_waketime: timing.waketime,
+    bedtime_window_start: addMinutesToHhmm(timing.bedtime, -30),
+    bedtime_window_end: addMinutesToHhmm(timing.bedtime, 30),
+    screen_cutoff: addMinutesToHhmm(timing.bedtime, -30),
+    waketime_window_start: addMinutesToHhmm(timing.waketime, -30),
+    waketime_window_end: addMinutesToHhmm(timing.waketime, 30),
+    pre_gym_target: timing.preGymSnack,
+    pre_gym_window_start: addMinutesToHhmm(timing.preGymSnack, -15),
+    pre_gym_window_end: addMinutesToHhmm(timing.preGymSnack, 15),
+    post_gym_deadline: postGymMealDeadline(timing),
+    post_gym_target: timing.postGymMeal,
+    snack_target: timing.snack3pm,
+    casein_target: timing.casein,
 
     // Weekly derived metrics
     ...weekly,
