@@ -68,7 +68,6 @@ function renderTraining(path = '/training', strict = false) {
   const page = (
     <MemoryRouter
       initialEntries={[path]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <TrainingPage />
     </MemoryRouter>
@@ -130,7 +129,6 @@ describe('Routines page History tab link', () => {
     render(
       <MemoryRouter
         initialEntries={['/routines']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <RoutinesPage />
       </MemoryRouter>,

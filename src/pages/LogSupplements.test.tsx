@@ -58,7 +58,6 @@ function renderPage() {
   return render(
     <MemoryRouter
       initialEntries={['/log/supplements']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <LogSupplements />
     </MemoryRouter>,

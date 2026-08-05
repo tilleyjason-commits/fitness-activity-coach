@@ -144,7 +144,6 @@ function renderDashboard() {
   return render(
     <MemoryRouter
       initialEntries={['/']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <Dashboard />
     </MemoryRouter>,
@@ -348,7 +347,6 @@ describe('recommendation applicability reconciliation', () => {
     view.rerender(
       <MemoryRouter
         initialEntries={['/']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <Dashboard />
       </MemoryRouter>,

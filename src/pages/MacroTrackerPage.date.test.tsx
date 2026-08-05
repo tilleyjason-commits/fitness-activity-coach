@@ -39,7 +39,6 @@ function renderPage() {
   return render(
     <MemoryRouter
       initialEntries={['/macros']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <MacroTrackerPage />
     </MemoryRouter>,

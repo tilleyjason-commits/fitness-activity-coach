@@ -6,7 +6,7 @@ import { PageHeader } from './PageHeader';
 describe('PageHeader', () => {
   it('gives the back link a 44px hit target', () => {
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <PageHeader title="Log Sleep" backTo="/log" />
       </MemoryRouter>,
     );

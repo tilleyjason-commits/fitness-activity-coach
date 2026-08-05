@@ -77,7 +77,6 @@ function renderProgress() {
   return render(
     <MemoryRouter
       initialEntries={['/weekly']}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <WeeklySummary />
     </MemoryRouter>,
