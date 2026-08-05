@@ -51,6 +51,40 @@ interface ComplianceItem {
   to: string;
 }
 
+function recommendationAction(ruleId: string, domain: string | undefined): { to: string; label: string } {
+  if (
+    ruleId.includes('protein') ||
+    ruleId.includes('calories') ||
+    ruleId.includes('meal') ||
+    ruleId.includes('snack') ||
+    ruleId.includes('dinner')
+  ) {
+    return { to: '/macros', label: 'Log food' };
+  }
+  if (ruleId.includes('casein')) return { to: '/log/nutrition', label: 'Log PM protein' };
+  if (
+    ruleId.includes('caffeine') ||
+    ruleId.includes('bedtime') ||
+    ruleId.includes('wake') ||
+    ruleId.includes('screen') ||
+    ruleId.includes('sleep')
+  ) {
+    return { to: '/log/sleep', label: 'Log sleep' };
+  }
+  if (
+    ruleId.includes('creatine') ||
+    ruleId.includes('vitamin') ||
+    ruleId.includes('magnesium') ||
+    ruleId.includes('beta_alanine') ||
+    ruleId.includes('omega3')
+  ) {
+    return { to: '/log/supplements', label: 'Log supplements' };
+  }
+  if (domain === 'training') return { to: '/training', label: 'Open workout' };
+  if (domain === 'recovery') return { to: '/log/subjective', label: 'Log recovery' };
+  return { to: '/log', label: 'Open log' };
+}
+
 /**
  * Check = done/passed, × = logged but failing, ring = not logged yet.
  * Labels are protocol-neutral (PM Protein, not a specific product). Creatine
@@ -579,12 +613,21 @@ export default function Dashboard() {
         ) : (
           <div className="space-y-3">
             {/* Home shows the single highest-severity item; the rest live on Progress. */}
-            <RecommendationCard
-              severity={sortedRecs[0].severity}
-              message={sortedRecs[0].message}
-              domain={getRuleById(sortedRecs[0].rule_id)?.domain}
-              onDismiss={() => void handleDismiss(sortedRecs[0].id)}
-            />
+            {(() => {
+              const rule = getRuleById(sortedRecs[0].rule_id);
+              const action = recommendationAction(sortedRecs[0].rule_id, rule?.domain);
+              return (
+                <RecommendationCard
+                  severity={sortedRecs[0].severity}
+                  message={sortedRecs[0].message}
+                  domain={rule?.domain}
+                  actionTo={action.to}
+                  actionLabel={action.label}
+                  evidence={rule?.evidence}
+                  onDismiss={() => void handleDismiss(sortedRecs[0].id)}
+                />
+              );
+            })()}
             {sortedRecs.length > 1 && (
               <Link
                 to="/weekly"

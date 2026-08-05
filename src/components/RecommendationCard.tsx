@@ -1,4 +1,5 @@
-import { AlertCircle, AlertTriangle, Info, X, type LucideIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertCircle, AlertTriangle, ChevronRight, Info, X, type LucideIcon } from 'lucide-react';
 import type { Severity } from '~/lib/types';
 
 interface SeverityStyle {
@@ -52,11 +53,24 @@ interface RecommendationCardProps {
   message: string;
   /** Rule domain shown as a small caption ("nutrition", "sleep", ...). */
   domain?: string;
+  /** One-tap repair path for the underlying recommendation. */
+  actionTo?: string;
+  actionLabel?: string;
+  /** Research/source rationale from rules.json. */
+  evidence?: string;
   onDismiss?: () => void;
 }
 
 /** One coaching recommendation, color-coded by severity. */
-export function RecommendationCard({ severity, message, domain, onDismiss }: RecommendationCardProps) {
+export function RecommendationCard({
+  severity,
+  message,
+  domain,
+  actionTo,
+  actionLabel = 'Fix this',
+  evidence,
+  onDismiss,
+}: RecommendationCardProps) {
   const style = SEVERITY_STYLES[severity];
   const Icon = style.icon;
 
@@ -75,6 +89,23 @@ export function RecommendationCard({ severity, message, domain, onDismiss }: Rec
           )}
         </div>
         <p className="text-sm leading-snug text-slate-700 dark:text-slate-200">{message}</p>
+        <div className="mt-3 flex flex-col gap-2">
+          {actionTo && (
+            <Link
+              to={actionTo}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-700 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white"
+            >
+              {actionLabel}
+              <ChevronRight className="h-4 w-4" aria-hidden />
+            </Link>
+          )}
+          {evidence && (
+            <details className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-300">
+              <summary className="cursor-pointer font-semibold">Why this advice?</summary>
+              <p className="mt-1 leading-snug">{evidence}</p>
+            </details>
+          )}
+        </div>
       </div>
       {onDismiss && (
         <button
