@@ -2,6 +2,7 @@ import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { NavBar } from '~/components/NavBar';
+import { ReminderScheduler } from '~/components/ReminderScheduler';
 import { getProfile } from '~/lib/db';
 import { lazy, Suspense, useEffect, useState } from 'react';
 
@@ -74,6 +75,7 @@ function AuthGuard() {
   // the same column, centred beside a sticky nav rail.
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-4xl">
+      <ReminderScheduler />
       <NavBar />
       <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 md:pb-10 md:pt-8">
         <Outlet />

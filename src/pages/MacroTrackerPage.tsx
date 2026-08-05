@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
-import { addDays, format, subDays } from 'date-fns';
+import { addDays, format, parseISO, subDays } from 'date-fns';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
 import {
   calculateMacros,
   deleteMeal,
+  getDailyLog,
   getMealFoods,
   getMealLogs,
   getProfile,
   getRecentMeals,
   saveMeal,
+  upsertDailyLog,
   type RecentMeal,
 } from '~/lib/db';
+import {
+  flushMealSaveQueue,
+  hasPendingMealSaves,
+  saveMealWithOfflineQueue,
+} from '~/lib/meal-offline-queue';
 import { MEAL_SLOTS, getMealSlotTimes, resolveMealTiming, resolveTargets } from '~/lib/constants';
 import {
   addFavorite,
@@ -58,8 +65,9 @@ function groupRecentsBySlot(recent: RecentMeal[]): Record<MealSlot, QuickAddOpti
 /** AI-powered per-meal macro tracker: the canonical MEAL_SLOTS summing into daily_logs. */
 export default function MacroTrackerPage() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const { log, loading, save, reload } = useDailyLog(date);
+  const { log, loading, reload } = useDailyLog(date);
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const [mealLogs, setMealLogs] = useState<MealLog[]>([]);
@@ -74,11 +82,11 @@ export default function MacroTrackerPage() {
   );
 
   useEffect(() => {
-    if (!user) return;
-    getProfile(user.id)
+    if (!userId) return;
+    getProfile(userId)
       .then(setProfile)
       .catch(() => setProfile(null));
-  }, [user]);
+  }, [userId]);
 
   // Recents span every logged day (not just the selected one), so they only
   // need to load once per visit — a slot-scoped "quick add" list, not a
@@ -87,7 +95,6 @@ export default function MacroTrackerPage() {
   // memoizes it, but this must not assume every consumer does — can't turn
   // this into a fetch-loop: groupRecentsBySlot always returns a new object
   // reference, so an object-identity dependency would never stop re-firing.
-  const userId = user?.id;
   useEffect(() => {
     if (!userId) return;
     getRecentMeals()
@@ -132,19 +139,53 @@ export default function MacroTrackerPage() {
     void loadMeals(dailyLogId);
   }, [dailyLogId, loadMeals]);
 
-  /** The daily_logs row is created lazily on the first meal save. */
-  async function ensureDailyLog(): Promise<string> {
-    if (log) return log.id;
-    const created = await save({});
-    if (!created) throw new Error('Could not create the daily log for this date.');
-    return created.id;
-  }
+  /**
+   * The daily_logs row is created lazily on the first meal save. Resolves
+   * any date, not just the one currently viewed — the offline queue can
+   * flush a save for an earlier day than whatever is on screen right now.
+   */
+  const ensureDailyLogId = useCallback(
+    async (forDate: string): Promise<string> => {
+      if (!userId) throw new Error('Not signed in.');
+      if (forDate === date && log) return log.id;
+      const existing = await getDailyLog(userId, forDate);
+      if (existing) return existing.id;
+      const created = await upsertDailyLog({
+        user_id: userId,
+        log_date: forDate,
+        day_of_week: format(parseISO(forDate), 'EEEE'),
+      });
+      if (forDate === date) void reload();
+      return created.id;
+    },
+    [userId, date, log, reload],
+  );
+
+  // Drain any meal saves queued from an earlier offline session as soon as a
+  // user is available — see meal-offline-queue.ts. Deliberately keyed only
+  // on userId (not date/log/reload, which change on every day-page and
+  // would make this re-fire constantly); the queue itself is empty in the
+  // common case, so the extra check is cheap.
+  useEffect(() => {
+    if (!userId) return;
+    if (!hasPendingMealSaves(userId)) return;
+    let cancelled = false;
+    void flushMealSaveQueue(userId, ensureDailyLogId, saveMeal).then((result) => {
+      if (!cancelled && result.flushed > 0) {
+        void Promise.all([loadMeals(dailyLogId), reload()]);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
   async function handleSave(slot: MealSlot, input: MealSaveInput): Promise<void> {
-    const id = await ensureDailyLog();
+    if (!userId) return;
     // One transactional round trip: meal log + foods + daily totals (RPC).
-    await saveMeal(id, slot, input);
-    await Promise.all([loadMeals(id), reload()]);
+    await saveMealWithOfflineQueue(userId, date, slot, input, ensureDailyLogId, saveMeal);
+    await Promise.all([loadMeals(await ensureDailyLogId(date)), reload()]);
   }
 
   async function handleClear(slot: MealSlot): Promise<void> {

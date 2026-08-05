@@ -9,6 +9,8 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '~/lib/supabase';
+import { quarantineDailyLogSaveQueue } from '~/lib/daily-log-offline-queue';
+import { quarantineMealSaveQueue } from '~/lib/meal-offline-queue';
 import { quarantineWorkoutSaveQueue } from '~/lib/workout-offline-queue';
 
 interface AuthContextValue {
@@ -82,6 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // just signed out, so a different account signing in on this device next
     // can never inherit or auto-flush them.
     if (outgoingUserId) {
+      quarantineDailyLogSaveQueue(outgoingUserId);
+      quarantineMealSaveQueue(outgoingUserId);
       quarantineWorkoutSaveQueue(outgoingUserId);
     }
   }, [session]);
