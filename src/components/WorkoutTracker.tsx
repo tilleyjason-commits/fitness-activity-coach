@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Check, ChevronDown, Dumbbell, History, Minus, Plus, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, Dumbbell, History, Minus, Plus, TrendingUp, Trash2, X } from 'lucide-react';
 import type { CardioWorkoutExercise, WorkoutExercise } from '~/lib/types';
-import { pastSetForIndex, type PastSet } from '~/lib/workout-mappers';
+import { pastSetForIndex, suggestNextSet, type PastSet } from '~/lib/workout-mappers';
 
 interface WorkoutTrackerProps {
   exercises: WorkoutExercise[];
@@ -92,6 +92,11 @@ export function WorkoutTracker({
   }
 
   const activeExercise = activeSet ? exercises[activeSet.exIdx] : null;
+  const activeReference =
+    activeSet && activeExercise
+      ? pastSetForIndex(pastByExerciseId?.[activeExercise.exercise.id] ?? null, activeSet.setIdx)
+      : null;
+  const overloadSuggestion = suggestNextSet(activeReference);
 
   return (
     <div className="space-y-3">
@@ -306,6 +311,25 @@ export function WorkoutTracker({
                 <X className="h-4 w-4" aria-hidden />
               </button>
             </div>
+
+            {activeReference && overloadSuggestion && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReps(overloadSuggestion.reps);
+                  setWeight(overloadSuggestion.weight);
+                }}
+                className="mb-4 flex min-h-11 w-full items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-50 px-3 py-2 text-left text-xs text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
+              >
+                <TrendingUp className="h-4 w-4 shrink-0" aria-hidden />
+                <span>
+                  Beat last: {describePastSet(activeReference)} · try{' '}
+                  <span className="font-semibold">
+                    {overloadSuggestion.reps} × {overloadSuggestion.weight} lb
+                  </span>
+                </span>
+              </button>
+            )}
 
             <div className="mb-4 grid grid-cols-3 gap-2">
               <div>

@@ -13,7 +13,7 @@ import {
   saveMeal,
   type RecentMeal,
 } from '~/lib/db';
-import { MEAL_SLOTS, resolveTargets } from '~/lib/constants';
+import { MEAL_SLOTS, getMealSlotTimes, resolveMealTiming, resolveTargets } from '~/lib/constants';
 import {
   addFavorite,
   getFavoritesForSlot,
@@ -105,6 +105,7 @@ export default function MacroTrackerPage() {
   }, [userId]);
 
   const targets = resolveTargets(profile);
+  const slotTimes = getMealSlotTimes(resolveMealTiming(profile));
 
   const loadMeals = useCallback(async (dailyLogId: string | null) => {
     if (!dailyLogId) {
@@ -274,6 +275,7 @@ export default function MacroTrackerPage() {
                 slot={slot}
                 mealLog={mealLog}
                 foods={slotFoods}
+                slotTimes={slotTimes}
                 onCalculate={calculateMacros}
                 onSave={handleSave}
                 onClear={handleClear}

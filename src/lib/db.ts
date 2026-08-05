@@ -346,7 +346,7 @@ export async function deleteMeal(dailyLogId: string, mealSlot: MealSlot): Promis
   if (error) throw new Error(`Meal delete failed (delete_meal): ${error.message}`);
 }
 
-/** Ask the calculate-macros Edge Function (NVIDIA first, DeepSeek fallback). */
+/** Ask the calculate-macros Edge Function (OpenRouter first, NVIDIA fallback). */
 export async function calculateMacros(
   description: string,
   mealSlot: MealSlot,

@@ -5,6 +5,7 @@ import { useAuth } from '~/context/AuthContext';
 import { upsertProfile } from '~/lib/db';
 
 type Step = 1 | 2 | 3;
+type UnitSystem = 'us' | 'metric';
 
 /** Raw input strings for every wizard field; converted to numbers on submit. */
 interface SetupData {
@@ -50,6 +51,34 @@ function trainingTimeToHHMM(choice: string): string | null {
 
 function toNum(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
+}
+
+function inchesToCm(inches: number): number {
+  return Math.round(inches * 2.54 * 10) / 10;
+}
+
+function kgToLb(kg: number): number {
+  return Math.round(kg * 2.2046226218 * 10) / 10;
+}
+
+function displayHeightUnit(units: UnitSystem): string {
+  return units === 'us' ? 'in' : 'cm';
+}
+
+function displayWeightUnit(units: UnitSystem): string {
+  return units === 'us' ? 'lb' : 'kg';
+}
+
+function toProfileHeightCm(value: string, units: UnitSystem): number | null {
+  const n = toNum(value);
+  if (n === null || Number.isNaN(n)) return n;
+  return units === 'us' ? inchesToCm(n) : n;
+}
+
+function toProfileWeightLb(value: string, units: UnitSystem): number | null {
+  const n = toNum(value);
+  if (n === null || Number.isNaN(n)) return n;
+  return units === 'us' ? n : kgToLb(n);
 }
 
 function Stepper({ step }: { step: Step }) {
@@ -104,17 +133,17 @@ interface SummaryRow {
   value: string;
 }
 
-function summaryRows(data: SetupData): SummaryRow[] {
+function summaryRows(data: SetupData, units: UnitSystem): SummaryRow[] {
   const dash = '—';
   const show = (v: string, suffix = '') => (v.trim() === '' ? dash : `${v}${suffix}`);
   return [
     { label: 'Age', value: show(data.age) },
-    { label: 'Height', value: show(data.height_cm, ' cm') },
+    { label: 'Height', value: show(data.height_cm, ` ${displayHeightUnit(units)}`) },
     { label: 'Training experience', value: show(data.training_years, ' yr') },
     { label: 'Trains at', value: data.training_time || dash },
-    { label: 'Current weight', value: show(data.weight_lb, ' lb') },
+    { label: 'Current weight', value: show(data.weight_lb, ` ${displayWeightUnit(units)}`) },
     { label: 'Body fat', value: show(data.bodyfat_pct, '%') },
-    { label: 'Goal weight', value: show(data.goal_weight_lb, ' lb') },
+    { label: 'Goal weight', value: show(data.goal_weight_lb, ` ${displayWeightUnit(units)}`) },
     { label: 'Goal body fat', value: show(data.goal_bodyfat_pct, '%') },
   ];
 }
@@ -129,6 +158,7 @@ export default function SetupWizard() {
 
   const [step, setStep] = useState<Step>(1);
   const [data, setData] = useState<SetupData>(EMPTY_DATA);
+  const [units, setUnits] = useState<UnitSystem>('us');
   const [errors, setErrors] = useState<Partial<Record<keyof SetupData, string>>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -152,18 +182,23 @@ export default function SetupWizard() {
     const age = toNum(data.age);
     if (age === null) next.age = 'This field is required';
     else if (Number.isNaN(age) || age < 10) next.age = 'Enter an age of 10 or older';
-    const height = toNum(data.height_cm);
+    const height = toProfileHeightCm(data.height_cm, units);
     if (height === null) next.height_cm = 'This field is required';
-    else if (Number.isNaN(height) || height <= 100) next.height_cm = 'Enter a height above 100 cm';
+    else if (Number.isNaN(height) || height <= 100) {
+      next.height_cm =
+        units === 'us' ? 'Enter a height above 39 inches' : 'Enter a height above 100 cm';
+    }
     setErrors(next);
     return Object.values(next).every((v) => !v);
   }
 
   function validateStep2(): boolean {
     const next: Partial<Record<keyof SetupData, string>> = {};
-    const weight = toNum(data.weight_lb);
+    const weight = toProfileWeightLb(data.weight_lb, units);
     if (weight === null) next.weight_lb = 'This field is required';
-    else if (Number.isNaN(weight) || weight <= 50) next.weight_lb = 'Enter a weight above 50 lb';
+    else if (Number.isNaN(weight) || weight <= 50) {
+      next.weight_lb = units === 'us' ? 'Enter a weight above 50 lb' : 'Enter a weight above 23 kg';
+    }
     const bodyfat = toNum(data.bodyfat_pct);
     if (bodyfat === null) next.bodyfat_pct = 'This field is required';
     else if (Number.isNaN(bodyfat) || bodyfat < 0 || bodyfat > 60)
@@ -186,17 +221,17 @@ export default function SetupWizard() {
         id: user.id,
         user_id: user.id,
         age: toNum(data.age),
-        height_cm: toNum(data.height_cm),
-        weight_lb: toNum(data.weight_lb),
+        height_cm: toProfileHeightCm(data.height_cm, units),
+        weight_lb: toProfileWeightLb(data.weight_lb, units),
         bodyfat_pct: toNum(data.bodyfat_pct),
         goal_bodyfat_pct: toNum(data.goal_bodyfat_pct),
-        goal_weight_lb: toNum(data.goal_weight_lb),
+        goal_weight_lb: toProfileWeightLb(data.goal_weight_lb, units),
         training_years: toNum(data.training_years),
         training_time: trainingTimeToHHMM(data.training_time),
       });
       // Navigate only after the profile actually saved; a failure keeps the
       // user (and their entered values) on the wizard with a retryable error.
-      navigate('/');
+      navigate('/log');
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Failed to save profile');
     } finally {
@@ -229,9 +264,40 @@ export default function SetupWizard() {
 
       <Stepper step={step} />
 
+      <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700/60 dark:bg-slate-800">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+          Preferred units
+        </p>
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Preferred units">
+          {[
+            { value: 'us', label: 'US', description: 'in + lb' },
+            { value: 'metric', label: 'Metric', description: 'cm + kg' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setUnits(option.value as UnitSystem)}
+              aria-pressed={units === option.value}
+              className={`rounded-xl border px-3 py-2 text-left transition-colors ${
+                units === option.value
+                  ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700'
+              }`}
+            >
+              <span className="block text-sm font-semibold">{option.label}</span>
+              <span className="block text-xs opacity-75">{option.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="card space-y-4">
         {step === 1 && (
           <>
+            <div className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-100">
+              These fields set your calorie, protein, and meal-timing targets. You can change them
+              later in More.
+            </div>
             <div>
               <label htmlFor="setup-age" className="label">
                 Age
@@ -251,7 +317,7 @@ export default function SetupWizard() {
             </div>
             <div>
               <label htmlFor="setup-height" className="label">
-                Height (cm)
+                Height ({displayHeightUnit(units)})
               </label>
               <input
                 id="setup-height"
@@ -261,7 +327,7 @@ export default function SetupWizard() {
                 step="0.1"
                 value={data.height_cm}
                 onChange={(e) => set('height_cm', e.target.value)}
-                placeholder="e.g. 178"
+                placeholder={units === 'us' ? 'e.g. 72' : 'e.g. 178'}
                 className={fieldClass('height_cm')}
               />
               {fieldError('height_cm')}
@@ -307,9 +373,13 @@ export default function SetupWizard() {
 
         {step === 2 && (
           <>
+            <div className="rounded-xl bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-100">
+              Current stats anchor today&apos;s targets. Goal stats help the coach keep the deficit
+              conservative instead of chasing scale weight too aggressively.
+            </div>
             <div>
               <label htmlFor="setup-weight" className="label">
-                Current weight (lb)
+                Current weight ({displayWeightUnit(units)})
               </label>
               <input
                 id="setup-weight"
@@ -319,7 +389,7 @@ export default function SetupWizard() {
                 step="0.1"
                 value={data.weight_lb}
                 onChange={(e) => set('weight_lb', e.target.value)}
-                placeholder="e.g. 212.4"
+                placeholder={units === 'us' ? 'e.g. 212.4' : 'e.g. 96.3'}
                 className={fieldClass('weight_lb')}
               />
               {fieldError('weight_lb')}
@@ -359,7 +429,7 @@ export default function SetupWizard() {
           <>
             <div>
               <label htmlFor="setup-goal-weight" className="label">
-                Goal weight (lb)
+                Goal weight ({displayWeightUnit(units)})
               </label>
               <input
                 id="setup-goal-weight"
@@ -368,7 +438,7 @@ export default function SetupWizard() {
                 min={0}
                 value={data.goal_weight_lb}
                 onChange={(e) => set('goal_weight_lb', e.target.value)}
-                placeholder="e.g. 190"
+                placeholder={units === 'us' ? 'e.g. 190' : 'e.g. 86'}
                 className={fieldClass('goal_weight_lb')}
               />
             </div>
@@ -392,7 +462,7 @@ export default function SetupWizard() {
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/50">
               <h2 className="mb-2 text-sm font-semibold">Summary</h2>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
-                {summaryRows(data).map((row) => (
+                {summaryRows(data, units).map((row) => (
                   <div key={row.label}>
                     <dt className="text-xs text-slate-500 dark:text-slate-400">{row.label}</dt>
                     <dd className="text-sm font-medium">{row.value}</dd>
@@ -401,10 +471,19 @@ export default function SetupWizard() {
               </dl>
             </div>
 
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+              <h2 className="mb-1 font-semibold">Your first-day loop</h2>
+              <ol className="ml-4 list-decimal space-y-1">
+                <li>Log one meal so macro targets become useful.</li>
+                <li>Open Workout and start today&apos;s session or a blank workout.</li>
+                <li>Check Home for the first coaching recommendation.</li>
+              </ol>
+            </div>
+
             {saveError && (
               <p role="alert" className="text-sm text-red-500">
                 Couldn&apos;t save your profile: {saveError}. Your answers are still here — tap
-                &ldquo;Let&apos;s go!&rdquo; to try again.
+                &ldquo;Start first log&rdquo; to try again.
               </p>
             )}
 
@@ -415,7 +494,7 @@ export default function SetupWizard() {
               className="btn-primary"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-              Let&apos;s go!
+              Start first log
             </button>
             <button
               type="button"
