@@ -4,6 +4,8 @@ import { MEAL_SLOT_ICONS, MEAL_SLOT_LABELS, MEAL_SLOT_TIMES } from '~/lib/consta
 import { toHHMM } from '~/lib/evaluate';
 import type { MacrosFromAI, MealFood, MealLog, MealSlot } from '~/lib/types';
 
+export type MealSlotTimeMeta = { start: string; hint: string };
+
 type CardState = 'idle' | 'calculating' | 'results' | 'saved' | 'error';
 
 type Confidence = 'high' | 'medium' | 'low' | null;
@@ -41,6 +43,8 @@ interface MealCardProps {
   mealLog: MealLog | null;
   /** Saved food rows belonging to mealLog. */
   foods: MealFood[];
+  /** Profile-resolved slot times; defaults to the Jason baseline schedule. */
+  slotTimes?: Record<MealSlot, MealSlotTimeMeta>;
   onCalculate: (description: string, slot: MealSlot) => Promise<MacrosFromAI>;
   onSave: (slot: MealSlot, input: MealSaveInput) => Promise<void>;
   onClear: (slot: MealSlot) => Promise<void>;
@@ -110,11 +114,20 @@ const CONFIDENCE_DOT: Record<'high' | 'medium' | 'low', string> = {
 };
 
 /** One meal slot: describe → AI calculate → edit → save into meal_logs. */
-export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }: MealCardProps) {
+export function MealCard({
+  slot,
+  mealLog,
+  foods,
+  slotTimes = MEAL_SLOT_TIMES,
+  onCalculate,
+  onSave,
+  onClear,
+}: MealCardProps) {
+  const slotMeta = slotTimes[slot] ?? MEAL_SLOT_TIMES[slot];
   const [state, setState] = useState<CardState>(mealLog ? 'saved' : 'idle');
   const [description, setDescription] = useState(mealLog?.raw_input ?? '');
   const [mealTime, setMealTime] = useState(
-    toHHMM(mealLog?.meal_time ?? null) ?? MEAL_SLOT_TIMES[slot].start,
+    toHHMM(mealLog?.meal_time ?? null) ?? slotMeta.start,
   );
   const [drafts, setDrafts] = useState<FoodDraft[]>([]);
   const [saving, setSaving] = useState(false);
@@ -132,12 +145,12 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
   useEffect(() => {
     if (mealLog) {
       setDescription(mealLog.raw_input ?? '');
-      setMealTime(toHHMM(mealLog.meal_time) ?? MEAL_SLOT_TIMES[slot].start);
+      setMealTime(toHHMM(mealLog.meal_time) ?? slotMeta.start);
       setState('saved');
       setExpanded(true);
     } else {
       setDescription('');
-      setMealTime(MEAL_SLOT_TIMES[slot].start);
+      setMealTime(slotMeta.start);
       setDrafts([]);
       setState('idle');
       setExpanded(false);
@@ -145,7 +158,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
     setError(null);
     setProviderNotice(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mealLog?.id]);
+  }, [mealLog?.id, slotMeta.start]);
 
   async function handleCalculate() {
     const trimmed = description.trim();
@@ -257,7 +270,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</span>
             <span className="block text-xs text-slate-500 dark:text-slate-400">
-              {MEAL_SLOT_TIMES[slot].hint}
+              {slotMeta.hint}
             </span>
           </span>
           <Plus className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden />
@@ -274,7 +287,7 @@ export function MealCard({ slot, mealLog, foods, onCalculate, onSave, onClear }:
                 <div>
                   <h2 className="text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {MEAL_SLOT_TIMES[slot].hint}
+                    {slotMeta.hint}
                   </p>
                 </div>
               </div>

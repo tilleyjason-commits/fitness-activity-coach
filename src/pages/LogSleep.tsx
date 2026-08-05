@@ -1,11 +1,13 @@
-﻿import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Loader2, Star } from 'lucide-react';
+import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
+import { getProfile } from '~/lib/db';
 import { toHHMM } from '~/lib/evaluate';
-import { MEAL_TIMING } from '~/lib/constants';
-import type { DailyLog } from '~/lib/types';
+import { resolveMealTiming, type MealTiming } from '~/lib/constants';
+import type { DailyLog, Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 import { ToggleRow } from '~/components/ToggleRow';
 
@@ -13,8 +15,10 @@ const QUALITY_LABELS = ['Terrible', 'Poor', 'Okay', 'Good', 'Excellent'];
 
 export default function LogSleep() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const today = format(new Date(), 'yyyy-MM-dd');
   const { log, loading, saving, error, save } = useDailyLog(today);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const [bedtime, setBedtime] = useState('');
   const [waketime, setWaketime] = useState('');
@@ -22,6 +26,15 @@ export default function LogSleep() {
   const [earlyWake, setEarlyWake] = useState(false);
   const [lastCaffeine, setLastCaffeine] = useState('');
   const [lastScreen, setLastScreen] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    getProfile(user.id)
+      .then(setProfile)
+      .catch(() => setProfile(null));
+  }, [user]);
+
+  const timing: MealTiming = resolveMealTiming(profile);
 
   useEffect(() => {
     if (!log) return;
@@ -43,7 +56,7 @@ export default function LogSleep() {
       last_caffeine_time: lastCaffeine || null,
       last_screen_time: lastScreen || null,
       caffeine_cutoff_respected: lastCaffeine
-        ? lastCaffeine <= MEAL_TIMING.caffeineCutoff
+        ? lastCaffeine < timing.caffeineCutoff
         : null,
     };
     const saved = await save(patch);
@@ -69,7 +82,7 @@ export default function LogSleep() {
               className="field"
             />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              target ~{MEAL_TIMING.bedtime}
+              target ~{timing.bedtime}
             </p>
           </div>
           <div>
@@ -84,7 +97,7 @@ export default function LogSleep() {
               className="field"
             />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              target ~{MEAL_TIMING.waketime}
+              target ~{timing.waketime}
             </p>
           </div>
         </div>
@@ -143,7 +156,7 @@ export default function LogSleep() {
               className="field"
             />
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              cutoff {MEAL_TIMING.caffeineCutoff}
+              cutoff {timing.caffeineCutoff}
             </p>
           </div>
           <div>
