@@ -36,7 +36,7 @@ describe('RecommendationCard accessibility', () => {
 
   it('surfaces an action link and evidence disclosure when provided', () => {
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <RecommendationCard
           severity="medium"
           message="Caffeine was late."
