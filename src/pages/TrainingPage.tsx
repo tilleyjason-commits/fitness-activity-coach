@@ -12,6 +12,7 @@ import { ExerciseSelector } from '~/components/ExerciseSelector';
 import { WorkoutTracker } from '~/components/WorkoutTracker';
 import { WorkoutHistory } from '~/components/WorkoutHistory';
 import { RestTimer } from '~/components/RestTimer';
+import { hasRunningPersistedTimer } from '~/lib/rest-timer';
 import { Skeleton } from '~/components/Skeleton';
 import {
   completeWorkout,
@@ -97,7 +98,10 @@ export default function TrainingPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   const [restDefaultSeconds, setRestDefaultSeconds] = useState(90);
-  const [showRestTimer, setShowRestTimer] = useState(false);
+  // Reopen the rest-timer sheet on mount if a countdown was still running
+  // when the page last unloaded (app switch, phone lock) — RestTimer itself
+  // restores the actual countdown from the same persisted state.
+  const [showRestTimer, setShowRestTimer] = useState(() => hasRunningPersistedTimer());
   const [restTimerKey, setRestTimerKey] = useState(0);
 
   // Operate-mode layout: mid-session the exercise browser stays collapsed

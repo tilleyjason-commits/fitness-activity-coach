@@ -1,6 +1,7 @@
 ﻿import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RestTimer } from './RestTimer';
+import { loadPersistedTimer } from '~/lib/rest-timer';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -17,7 +18,7 @@ function startAndFinish(props: Parameters<typeof RestTimer>[0] = {}) {
   fireEvent.click(screen.getByRole('button', { name: 'Start' }));
   act(() => {
     vi.setSystemTime(new Date(120_000));
-    vi.advanceTimersToNextTimer();
+    vi.runOnlyPendingTimers();
   });
 }
 
@@ -85,7 +86,7 @@ describe('RestTimer wall-clock integration', () => {
       // Simulate a backgrounded/locked browser: wall time jumps past the
       // deadline before the next throttled display callback executes.
       vi.setSystemTime(new Date(120_000));
-      vi.advanceTimersToNextTimer();
+      vi.runOnlyPendingTimers();
     });
 
     expect(screen.getByText('Rest complete')).toBeInTheDocument();
@@ -99,7 +100,7 @@ describe('RestTimer wall-clock integration', () => {
 
     act(() => {
       vi.setSystemTime(new Date(30_000));
-      vi.advanceTimersToNextTimer();
+      vi.runOnlyPendingTimers();
     });
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     expect(screen.getByText('1:00')).toBeInTheDocument();
@@ -110,8 +111,59 @@ describe('RestTimer wall-clock integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start' }));
     act(() => {
       vi.setSystemTime(new Date(150_000));
-      vi.advanceTimersToNextTimer();
+      vi.runOnlyPendingTimers();
     });
     expect(screen.getByText('Rest complete')).toBeInTheDocument();
+  });
+});
+
+describe('RestTimer persistence across a reload', () => {
+  // A backgrounded mobile tab can have its whole JS context discarded and
+  // recreated on the next reload — React never gets to run unmount cleanup
+  // for the old instance. Rendering a second, independent instance without
+  // unmounting the first approximates that: nothing hands off state in
+  // memory, only whatever the first instance last wrote to localStorage.
+  it('restores a running countdown from localStorage instead of resetting it', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    render(<RestTimer initialSeconds={90} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+
+    act(() => {
+      vi.setSystemTime(new Date(30_000));
+    });
+
+    render(<RestTimer initialSeconds={90} />);
+    expect(screen.getByText('1:00')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Pause' })).toHaveLength(2);
+  });
+
+  it('shows finished immediately when the deadline passed while backgrounded', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    render(<RestTimer initialSeconds={90} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+
+    // Jump the wall clock past the deadline without letting the first
+    // instance's own display interval ever run, so its persisted state is
+    // still the stale "running" snapshot from the moment Start was pressed.
+    act(() => {
+      vi.setSystemTime(new Date(120_000));
+    });
+
+    render(<RestTimer initialSeconds={90} />);
+    expect(screen.getByText('Rest complete')).toBeInTheDocument();
+  });
+
+  it('clears the persisted timer on close so it does not reappear', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    const onClose = vi.fn();
+    render(<RestTimer initialSeconds={90} onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start' }));
+    expect(loadPersistedTimer()).not.toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close rest timer' }));
+    expect(loadPersistedTimer()).toBeNull();
   });
 });
