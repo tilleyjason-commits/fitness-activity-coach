@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Pause, Play, RotateCcw, X } from 'lucide-react';
 import {
   applyDuration,
+  clearPersistedTimer,
   createTimer,
   isFinished,
+  loadPersistedTimer,
   pauseTimer,
+  persistTimer,
   remainingSeconds,
+  type RestTimerState,
   resetTimer,
   startTimer,
 } from '~/lib/rest-timer';
@@ -64,7 +68,16 @@ interface RestTimerProps {
 
 /** Bottom-sheet rest countdown between sets: ready → running → finished (stays until closed). */
 export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDefault }: RestTimerProps) {
-  const [timer, setTimer] = useState(() => createTimer(initialSeconds));
+  const [timer, setTimer] = useState<RestTimerState>(() => {
+    // A persisted timer means this mount is restoring state after the page
+    // was reloaded (app switch, phone lock) mid-countdown — use it as-is
+    // instead of the fresh/auto-start timer a normal mount would get.
+    const persisted = loadPersistedTimer();
+    if (persisted) return persisted;
+    return autoStartKey !== undefined
+      ? startTimer(createTimer(initialSeconds), Date.now())
+      : createTimer(initialSeconds);
+  });
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [finished, setFinished] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -72,8 +85,29 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
   const secondsLeft = remainingSeconds(timer, nowMs);
   const running = timer.running;
 
-  // Auto-start when a set is logged (parent bumps autoStartKey).
+  // Persist on every change so a page reload (app switch, phone lock) can
+  // restore the countdown instead of silently resetting it.
   useEffect(() => {
+    persistTimer(timer);
+  }, [timer]);
+
+  // Clear on unmount — but only for a real React unmount (explicit close,
+  // finishing the workout). A backgrounded-tab reload never runs this
+  // cleanup, which is exactly the case the initializer above restores from.
+  useEffect(() => {
+    return () => clearPersistedTimer();
+  }, []);
+
+  // Auto-start when a set is logged (parent bumps autoStartKey). Skipped on
+  // the very first render: the lazy initializer above already applied
+  // autoStartKey (or a restored timer) for that render, so re-applying it
+  // here would stomp a restored in-progress countdown right after mount.
+  const isFirstRenderRef = useRef(true);
+  useEffect(() => {
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
     if (autoStartKey === undefined) return;
     const now = Date.now();
     setNowMs(now);
@@ -199,7 +233,10 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
           {onClose && (
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => {
+                clearPersistedTimer();
+                onClose();
+              }}
               aria-label="Close rest timer"
               className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
             >

@@ -1,13 +1,21 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   applyDuration,
+  clearPersistedTimer,
   createTimer,
+  hasRunningPersistedTimer,
   isFinished,
+  loadPersistedTimer,
   pauseTimer,
+  persistTimer,
   remainingSeconds,
   resetTimer,
   startTimer,
 } from '~/lib/rest-timer';
+
+afterEach(() => {
+  localStorage.clear();
+});
 
 /**
  * The rest timer must measure wall-clock elapsed time, not interval ticks:
@@ -67,5 +75,41 @@ describe('wall-clock rest timer', () => {
   it('never returns negative remaining time', () => {
     const t = startTimer(createTimer(30), T0);
     expect(remainingSeconds(t, T0 + 999_999)).toBe(0);
+  });
+});
+
+describe('rest timer persistence', () => {
+  it('round-trips a timer through localStorage', () => {
+    const t = startTimer(createTimer(90), T0);
+    persistTimer(t);
+    expect(loadPersistedTimer()).toEqual(t);
+  });
+
+  it('reads as absent when nothing has been persisted', () => {
+    expect(loadPersistedTimer()).toBeNull();
+  });
+
+  it('clears the persisted timer', () => {
+    persistTimer(startTimer(createTimer(90), T0));
+    clearPersistedTimer();
+    expect(loadPersistedTimer()).toBeNull();
+  });
+
+  it('treats corrupt or foreign data as absent instead of throwing', () => {
+    localStorage.setItem('fac-rest-timer-v1', 'not json');
+    expect(loadPersistedTimer()).toBeNull();
+
+    localStorage.setItem('fac-rest-timer-v1', JSON.stringify({ unrelated: true }));
+    expect(loadPersistedTimer()).toBeNull();
+  });
+
+  it('hasRunningPersistedTimer reflects only an actively running countdown', () => {
+    expect(hasRunningPersistedTimer()).toBe(false);
+
+    persistTimer(pauseTimer(startTimer(createTimer(90), T0), T0 + 30_000));
+    expect(hasRunningPersistedTimer()).toBe(false);
+
+    persistTimer(startTimer(createTimer(90), T0));
+    expect(hasRunningPersistedTimer()).toBe(true);
   });
 });
