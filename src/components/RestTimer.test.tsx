@@ -6,6 +6,7 @@ import { loadPersistedTimer } from '~/lib/rest-timer';
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  localStorage.clear();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (navigator as any).vibrate;
 });
@@ -165,5 +166,51 @@ describe('RestTimer persistence across a reload', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Close rest timer' }));
     expect(loadPersistedTimer()).toBeNull();
+  });
+});
+
+describe('RestTimer remount persistence', () => {
+  it('does not restart a running countdown after unmount/remount', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    localStorage.clear();
+
+    const first = render(<RestTimer autoStartKey={1} initialSeconds={90} />);
+    expect(screen.getByText('1:30')).toBeInTheDocument();
+
+    act(() => {
+      vi.setSystemTime(new Date(30_000));
+      vi.advanceTimersByTime(250);
+    });
+    expect(screen.getByText('1:00')).toBeInTheDocument();
+
+    first.unmount();
+    render(<RestTimer autoStartKey={1} initialSeconds={90} />);
+
+    expect(screen.getByText('1:00')).toBeInTheDocument();
+    expect(screen.queryByText('1:30')).not.toBeInTheDocument();
+  });
+
+  it('does not keep counting a paused timer across remount', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(0));
+    localStorage.clear();
+
+    const first = render(<RestTimer autoStartKey={1} initialSeconds={90} />);
+    act(() => {
+      vi.setSystemTime(new Date(30_000));
+      vi.advanceTimersByTime(250);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(screen.getByText('1:00')).toBeInTheDocument();
+
+    first.unmount();
+    act(() => {
+      vi.setSystemTime(new Date(90_000));
+    });
+    render(<RestTimer autoStartKey={1} initialSeconds={90} />);
+
+    expect(screen.getByText('1:00')).toBeInTheDocument();
+    expect(screen.getByText('paused')).toBeInTheDocument();
   });
 });

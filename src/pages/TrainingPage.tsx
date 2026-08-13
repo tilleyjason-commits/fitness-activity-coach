@@ -12,7 +12,7 @@ import { ExerciseSelector } from '~/components/ExerciseSelector';
 import { WorkoutTracker } from '~/components/WorkoutTracker';
 import { WorkoutHistory } from '~/components/WorkoutHistory';
 import { RestTimer } from '~/components/RestTimer';
-import { hasRunningPersistedTimer } from '~/lib/rest-timer';
+import { clearPersistedTimer, hasRunningPersistedTimer } from '~/lib/rest-timer';
 import { Skeleton } from '~/components/Skeleton';
 import {
   completeWorkout,
@@ -29,6 +29,12 @@ import {
   hasPendingWorkoutSaves,
   saveWorkoutWithOfflineQueue,
 } from '~/lib/workout-offline-queue';
+import {
+  chooseWorkoutToRestore,
+  clearWorkoutDraft,
+  persistWorkoutDraft,
+  readWorkoutDraft,
+} from '~/lib/workout-draft';
 import {
   createCardioWorkoutExercise,
   createWorkoutExercise,
@@ -173,13 +179,26 @@ export default function TrainingPage() {
       const routinePreset = routine && routineHasItems(routine) ? routine : null;
       setTodayRoutine(routinePreset);
 
-      if (!active && !alreadyCompleted && routinePreset) {
+      const draft = readWorkoutDraft(user.id, today);
+      const restored = chooseWorkoutToRestore({
+        cloud: active,
+        draft,
+        completedToday: alreadyCompleted,
+      });
+
+      if (!restored && !alreadyCompleted && routinePreset) {
         // Auto-populate the workout from today's routine preset — but never
         // after a completed workout: repeating a day is an explicit action.
-        setWorkout(replaceWorkoutWithRoutine(routinePreset, today));
+        const seeded = replaceWorkoutWithRoutine(routinePreset, today);
+        setWorkout(seeded);
+        persistWorkoutDraft(user.id, seeded);
         dirtyRef.current = true;
       } else {
-        setWorkout(active);
+        setWorkout(restored);
+        if (draft && restored === draft) {
+          // Local edits beat a stale cloud snapshot; schedule a catch-up save.
+          dirtyRef.current = true;
+        }
       }
     } catch (e) {
       if (requestId !== loadWorkoutRequestRef.current) return;
@@ -211,26 +230,51 @@ export default function TrainingPage() {
   // and serializes the actual saves.
   useEffect(() => {
     if (!user || !workout || !dirtyRef.current) return;
+    persistWorkoutDraft(user.id, workout);
     dirtyRef.current = false;
     autosaveRef.current?.schedule(workout);
+  }, [user, workout]);
+
+  // Mobile window-switch / PWA backgrounding often remounts before the
+  // 1.2s autosave debounce fires. Snapshot immediately and flush cloud save.
+  useEffect(() => {
+    if (!user) return;
+    const persistNow = () => {
+      if (workout) persistWorkoutDraft(user.id, workout);
+      void autosaveRef.current?.flush();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') persistNow();
+    };
+    window.addEventListener('pagehide', persistNow);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', persistNow);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [user, workout]);
 
   const mutateWorkout = useCallback((updater: (current: WorkoutState) => WorkoutState) => {
     setSaveError(null);
     dirtyRef.current = true;
-    setWorkout((prev) => (prev ? updater(prev) : prev));
-  }, []);
+    setWorkout((prev) => {
+      if (!prev) return prev;
+      const next = updater(prev);
+      if (user) persistWorkoutDraft(user.id, next);
+      return next;
+    });
+  }, [user]);
 
   function startWorkout(routine?: DailyRoutine) {
     loadWorkoutRequestRef.current += 1;
     setSaveError(null);
     setShowSelector(false);
     dirtyRef.current = true;
-    setWorkout(
-      routine
-        ? replaceWorkoutWithRoutine(routine, today)
-        : { exercises: [], cardioExercises: [], date: today },
-    );
+    const next = routine
+      ? replaceWorkoutWithRoutine(routine, today)
+      : { exercises: [], cardioExercises: [], date: today };
+    if (user) persistWorkoutDraft(user.id, next);
+    setWorkout(next);
   }
 
   const addExercise = useCallback(
@@ -316,6 +360,8 @@ export default function TrainingPage() {
       autosaveRef.current?.schedule(workout);
       await (autosaveRef.current?.flush() ?? saveWorkoutState(workout));
       await completeWorkout(user.id, today);
+      clearWorkoutDraft(user.id);
+      clearPersistedTimer();
       setWorkout(null);
       setCompletedToday(true);
       setConfirmFinish(false);
@@ -548,7 +594,10 @@ export default function TrainingPage() {
         <RestTimer
           autoStartKey={restTimerKey}
           initialSeconds={restDefaultSeconds}
-          onClose={() => setShowRestTimer(false)}
+          onClose={() => {
+            clearPersistedTimer();
+            setShowRestTimer(false);
+          }}
           onSaveDefault={handleSaveRestDefault}
         />
       )}

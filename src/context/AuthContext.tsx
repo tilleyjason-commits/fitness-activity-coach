@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
+import { stabilizeSession } from '~/lib/auth-session';
 import { supabase } from '~/lib/supabase';
 import { quarantineDailyLogSaveQueue } from '~/lib/daily-log-offline-queue';
 import { quarantineMealSaveQueue } from '~/lib/meal-offline-queue';
@@ -55,7 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, next) => {
-      setSession(next);
+      // TOKEN_REFRESHED after a mobile window switch must not replace the
+      // session object: a new user identity remounts AuthGuard and wipes
+      // in-memory workout state.
+      setSession((previous) => stabilizeSession(previous, next));
       setLoading(false);
       clearTimeout(fallback);
     });

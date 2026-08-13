@@ -42,7 +42,9 @@ function AuthGuard() {
   useEffect(() => {
     if (!user || loading) return;
     let active = true;
-    setProfileState(null);
+    // Same-user token refresh must not blank the tree. Clearing profileState
+    // here unmounts TrainingPage and drops unsaved sets.
+    setProfileState((prev) => (prev?.userId === user.id ? prev : null));
     getProfile(user.id)
       .then((p) => {
         if (!active) return;

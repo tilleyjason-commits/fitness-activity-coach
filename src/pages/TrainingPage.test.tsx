@@ -77,6 +77,7 @@ function renderTraining(path = '/training', strict = false) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   repo.getActiveWorkout.mockResolvedValue(null);
   repo.getWorkoutHistory.mockResolvedValue([]);
   repo.getWeeklyRoutines.mockResolvedValue(createEmptyWeeklyRoutines());
@@ -218,5 +219,58 @@ describe('completed-routine same-day behavior', () => {
     renderTraining();
 
     expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+  });
+});
+
+describe('mobile remount / window-switch restore', () => {
+  it('restores a logged set from the local draft after the page remounts', async () => {
+    const user = userEvent.setup();
+    localStorage.clear();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    const first = renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+    expect(screen.getByText(/1\/3 sets/i)).toBeInTheDocument();
+
+    // Mobile Safari / PWA token refresh remounts TrainingPage before the
+    // debounced cloud save lands. The draft must still restore the set.
+    repo.getActiveWorkout.mockResolvedValue({
+      date: new Date().toISOString().slice(0, 10),
+      exercises: [
+        {
+          exercise: { id: 'bench-press', name: 'Bench Press', muscleGroup: 'Chest' },
+          targetSets: 3,
+          targetReps: 8,
+          targetWeight: 185,
+          sets: [
+            { reps: 8, weight: 185, rir: null, completed: false },
+            { reps: 8, weight: 185, rir: null, completed: false },
+            { reps: 8, weight: 185, rir: null, completed: false },
+          ],
+        },
+      ],
+      cardioExercises: [],
+    });
+
+    first.unmount();
+    renderTraining();
+
+    expect(await screen.findByText(/1\/3 sets/i)).toBeInTheDocument();
+  });
+
+  it('keeps the rest timer visible after the page remounts', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    const first = renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+    expect(screen.getByRole('dialog', { name: 'Rest timer' })).toBeInTheDocument();
+
+    first.unmount();
+    renderTraining();
+
+    expect(await screen.findByRole('dialog', { name: 'Rest timer' })).toBeInTheDocument();
   });
 });

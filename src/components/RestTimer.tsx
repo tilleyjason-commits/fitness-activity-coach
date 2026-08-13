@@ -58,6 +58,16 @@ function notifyRestFinished(): void {
   }
 }
 
+function initialTimer(autoStartKey: number | undefined, initialSeconds: number): RestTimerState {
+  // A persisted timer means this mount is restoring state after a remount
+  // (token refresh) or a discarded tab (app switch). Use it as-is.
+  const persisted = loadPersistedTimer();
+  if (persisted) return persisted;
+  return autoStartKey !== undefined
+    ? startTimer(createTimer(initialSeconds), Date.now())
+    : createTimer(initialSeconds);
+}
+
 interface RestTimerProps {
   /** Bump to (re)start the countdown automatically after a set is logged. */
   autoStartKey?: number;
@@ -68,35 +78,41 @@ interface RestTimerProps {
 
 /** Bottom-sheet rest countdown between sets: ready → running → finished (stays until closed). */
 export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDefault }: RestTimerProps) {
-  const [timer, setTimer] = useState<RestTimerState>(() => {
-    // A persisted timer means this mount is restoring state after the page
-    // was reloaded (app switch, phone lock) mid-countdown — use it as-is
-    // instead of the fresh/auto-start timer a normal mount would get.
-    const persisted = loadPersistedTimer();
-    if (persisted) return persisted;
-    return autoStartKey !== undefined
-      ? startTimer(createTimer(initialSeconds), Date.now())
-      : createTimer(initialSeconds);
-  });
+  const [timer, setTimer] = useState<RestTimerState>(() => initialTimer(autoStartKey, initialSeconds));
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [finished, setFinished] = useState(false);
+  const [finished, setFinished] = useState(() => {
+    const persisted = loadPersistedTimer();
+    return persisted ? remainingSeconds(persisted, Date.now()) === 0 : false;
+  });
   const [saveMessage, setSaveMessage] = useState('');
   const totalSeconds = timer.totalSeconds;
   const secondsLeft = remainingSeconds(timer, nowMs);
   const running = timer.running;
 
-  // Persist on every change so a page reload (app switch, phone lock) can
-  // restore the countdown instead of silently resetting it.
+  // Persist on every change so a remount or discarded-tab reload can restore
+  // the wall-clock deadline. Do not clear on unmount: token-refresh remounts
+  // run cleanup and would wipe the snapshot the next mount needs.
   useEffect(() => {
     persistTimer(timer);
   }, [timer]);
 
-  // Clear on unmount — but only for a real React unmount (explicit close,
-  // finishing the workout). A backgrounded-tab reload never runs this
-  // cleanup, which is exactly the case the initializer above restores from.
   useEffect(() => {
-    return () => clearPersistedTimer();
-  }, []);
+    const persistNow = () => persistTimer(timer);
+    const catchUp = () => setNowMs(Date.now());
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') persistNow();
+      if (document.visibilityState === 'visible') catchUp();
+    };
+    window.addEventListener('pagehide', persistNow);
+    window.addEventListener('pageshow', catchUp);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      persistNow();
+      window.removeEventListener('pagehide', persistNow);
+      window.removeEventListener('pageshow', catchUp);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [timer]);
 
   // Auto-start when a set is logged (parent bumps autoStartKey). Skipped on
   // the very first render: the lazy initializer above already applied
