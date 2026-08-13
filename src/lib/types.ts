@@ -334,11 +334,18 @@ export type Weekday =
   | 'Saturday'
   | 'Sunday';
 
+export interface RoutineSetTarget {
+  reps: number;
+  weight: number;
+}
+
 export interface RoutineExercise {
   exercise: Exercise;
   targetSets: number;
   targetReps: number;
   targetWeight: number;
+  /** Per-set last-completed reps/weight. Missing on legacy routines. */
+  setTargets?: RoutineSetTarget[];
 }
 
 export interface RoutineCardioExercise {
@@ -427,6 +434,7 @@ export interface RoutineItemRow {
   target_sets: number | null;
   target_reps: number | null;
   target_weight: number | null;
+  set_targets?: RoutineSetTarget[] | null;
   cardio_equipment_id: string | null;
   cardio_equipment_name: string | null;
   duration_minutes: number | null;

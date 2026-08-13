@@ -11,6 +11,7 @@ Ship in this order — each step depends on the previous one being live:
    - `012_fix_workout_set_rls.sql` — separates workout-exercise and set inserts so the set RLS policy can observe the newly inserted parent row.
    - `013_user_supplements.sql` — normalized per-user supplement definitions/logs plus the authenticated `set_supplement_taken` RPC.
    - `014_expand_meal_slots.sql` — widens the `meal_logs.meal_slot` CHECK to the seven canonical slots (adds `pre_workout_snack`, `bedtime_snack`).
+   - `021_routine_set_targets.sql` — optional `routine_items.set_targets` jsonb plus `save_routine` / `validate_routine_payload` support for per-set last-completed reps/weight. **Must be live before the frontend that selects/sends `set_targets`.** Legacy rows stay valid (no backfill).
 
    Apply with `supabase db push` (or paste into the SQL editor in order).
    Migration 014 is intentionally **not** idempotent: it fails closed if the

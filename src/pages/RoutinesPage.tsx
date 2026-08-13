@@ -256,7 +256,11 @@ export default function RoutinesPage() {
                     <div>
                       <p className="text-sm font-medium">{item.exercise.name}</p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {item.targetSets} × {item.targetReps} · {item.targetWeight} lb
+                        {item.setTargets?.length
+                          ? item.setTargets
+                              .map((target) => `${target.reps} × ${target.weight}`)
+                              .join(' · ')
+                          : `${item.targetSets} × ${item.targetReps} · ${item.targetWeight} lb`}
                       </p>
                     </div>
                     <button

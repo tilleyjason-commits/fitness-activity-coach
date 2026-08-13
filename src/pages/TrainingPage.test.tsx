@@ -84,6 +84,7 @@ beforeEach(() => {
   repo.getRestTimerDefaultSeconds.mockResolvedValue(90);
   repo.hasCompletedWorkout.mockResolvedValue(false);
   repo.saveWorkoutState.mockResolvedValue(undefined);
+  repo.saveRoutine.mockResolvedValue(undefined);
 });
 
 describe('Training page tab navigation', () => {
@@ -272,5 +273,52 @@ describe('mobile remount / window-switch restore', () => {
     renderTraining();
 
     expect(await screen.findByRole('dialog', { name: 'Rest timer' })).toBeInTheDocument();
+  });
+});
+
+describe('routine target carry-forward after a completed set', () => {
+  it('persists the completed set as that slot on today\'s routine', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+
+    await waitFor(() => expect(repo.saveRoutine).toHaveBeenCalled());
+    const saved = repo.saveRoutine.mock.calls.at(-1)?.[0] as {
+      exercises: Array<{ exercise: { id: string }; setTargets?: Array<{ reps: number; weight: number }> }>;
+    };
+    expect(saved.exercises[0].exercise.id).toBe('bench-press');
+    expect(saved.exercises[0].setTargets?.[0]).toEqual({ reps: 8, weight: 185 });
+  });
+
+  it('keeps set 1 when set 2 is completed later', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+    await user.click(await screen.findByRole('button', { name: /complete set 2/i }));
+
+    await waitFor(() => {
+      const saved = repo.saveRoutine.mock.calls.at(-1)?.[0] as {
+        exercises: Array<{ setTargets?: Array<{ reps: number; weight: number }> }>;
+      };
+      expect(saved.exercises[0].setTargets).toEqual([
+        { reps: 8, weight: 185 },
+        { reps: 8, weight: 185 },
+        { reps: 8, weight: 185 },
+      ]);
+    });
+  });
+
+  it('does not rewrite the routine when a logged exercise is not on the preset', async () => {
+    const user = userEvent.setup();
+    renderTraining();
+    await user.click(await screen.findByRole('button', { name: 'Start Blank Workout' }));
+    expect(await screen.findByRole('region', { name: 'Add Exercise' })).toBeVisible();
+    expect(repo.saveRoutine).not.toHaveBeenCalled();
   });
 });

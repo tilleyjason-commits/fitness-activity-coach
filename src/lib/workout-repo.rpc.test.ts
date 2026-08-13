@@ -139,7 +139,9 @@ describe('saveRoutine via save_routine RPC', () => {
     const items = payload.p_items as Record<string, unknown>[];
     expect(items).toHaveLength(2);
     expect(items[0]).toMatchObject({ item_type: 'strength', exercise_id: 'ohp', sort_order: 0 });
+    expect(items[0]).not.toHaveProperty('set_targets');
     expect(items[1]).toMatchObject({ item_type: 'cardio', cardio_equipment_id: 'bike', sort_order: 1 });
+    expect(items[1]).not.toHaveProperty('set_targets');
 
     expect(JSON.stringify(payload)).not.toMatch(/user_?id/i);
     expect(fromMock).not.toHaveBeenCalled();

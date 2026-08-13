@@ -22,6 +22,7 @@ import {
   getWorkoutHistory,
   hasCompletedWorkout,
   saveRestTimerDefaultSeconds,
+  saveRoutine,
   saveWorkoutState,
 } from '~/lib/workout-repo';
 import {
@@ -36,6 +37,7 @@ import {
   readWorkoutDraft,
 } from '~/lib/workout-draft';
 import {
+  applyCompletedSetToRoutine,
   createCardioWorkoutExercise,
   createWorkoutExercise,
   findLastPerformance,
@@ -95,6 +97,7 @@ export default function TrainingPage() {
   const [workout, setWorkout] = useState<WorkoutState | null>(null);
   const [completedToday, setCompletedToday] = useState(false);
   const [todayRoutine, setTodayRoutine] = useState<DailyRoutine | null>(null);
+  const todayRoutineRef = useRef<DailyRoutine | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -126,6 +129,7 @@ export default function TrainingPage() {
   // Single-flight coalescing autosave: one save in flight, newest snapshot
   // wins, stale completions ignored (see src/lib/autosave.ts).
   const autosaveRef = useRef<AutosaveController<WorkoutStateType> | null>(null);
+  const routineAutosaveRef = useRef<AutosaveController<DailyRoutine> | null>(null);
   const [autosaveState, setAutosaveState] = useState<AutosaveState>({
     status: 'idle',
     error: null,
@@ -151,10 +155,24 @@ export default function TrainingPage() {
     autosaveRef.current = controller;
     setAutosaveState(controller.getState());
     const unsubscribe = controller.subscribe(setAutosaveState);
+    const routineController = createAutosaveController<DailyRoutine>(
+      async (snapshot) => {
+        try {
+          await saveRoutine(snapshot);
+        } catch (e) {
+          setSaveError(e instanceof Error ? e.message : 'Failed to save routine targets');
+          throw e;
+        }
+      },
+      { debounceMs: 400 },
+    );
+    routineAutosaveRef.current = routineController;
     return () => {
       unsubscribe();
       controller.dispose();
       autosaveRef.current = null;
+      routineController.dispose();
+      routineAutosaveRef.current = null;
     };
   }, [user]);
 
@@ -177,6 +195,7 @@ export default function TrainingPage() {
 
       const routine = routines[getTodayWeekday()];
       const routinePreset = routine && routineHasItems(routine) ? routine : null;
+      todayRoutineRef.current = routinePreset;
       setTodayRoutine(routinePreset);
 
       const draft = readWorkoutDraft(user.id, today);
@@ -242,6 +261,7 @@ export default function TrainingPage() {
     const persistNow = () => {
       if (workout) persistWorkoutDraft(user.id, workout);
       void autosaveRef.current?.flush();
+      void routineAutosaveRef.current?.flush();
     };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') persistNow();
@@ -303,10 +323,27 @@ export default function TrainingPage() {
   const logSet = useCallback(
     (exIdx: number, setIdx: number, reps: number, weight: number, rir: number | null) => {
       mutateWorkout((current) => updateSetRecord(current, exIdx, setIdx, { reps, weight, rir }));
+      const exerciseId = workout?.exercises[exIdx]?.exercise.id;
+      const currentRoutine = todayRoutineRef.current;
+      if (exerciseId && currentRoutine) {
+        const nextRoutine = applyCompletedSetToRoutine(
+          currentRoutine,
+          exerciseId,
+          setIdx,
+          reps,
+          weight,
+          exIdx,
+        );
+        if (nextRoutine !== currentRoutine) {
+          todayRoutineRef.current = nextRoutine;
+          setTodayRoutine(nextRoutine);
+          routineAutosaveRef.current?.schedule(nextRoutine);
+        }
+      }
       setShowRestTimer(true);
       setRestTimerKey((key) => key + 1);
     },
-    [mutateWorkout],
+    [mutateWorkout, workout],
   );
 
   const changeSetRir = useCallback(
@@ -359,6 +396,7 @@ export default function TrainingPage() {
       dirtyRef.current = false;
       autosaveRef.current?.schedule(workout);
       await (autosaveRef.current?.flush() ?? saveWorkoutState(workout));
+      await routineAutosaveRef.current?.flush();
       await completeWorkout(user.id, today);
       clearWorkoutDraft(user.id);
       clearPersistedTimer();

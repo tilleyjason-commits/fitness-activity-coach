@@ -8,6 +8,7 @@ import type {
   RoutineItemInsertRow,
   RoutineItemRow,
   RoutineRow,
+  RoutineSetTarget,
   RoutineUpsertRow,
   SetRecord,
   Weekday,
@@ -36,13 +37,19 @@ export function createWorkoutExercise(
   sets: number,
   reps: number,
   weight: number,
+  setTargets?: RoutineSetTarget[],
 ): WorkoutExercise {
   return {
     exercise,
     targetSets: sets,
     targetReps: reps,
     targetWeight: weight,
-    sets: Array.from({ length: sets }, () => ({ reps, weight, rir: null, completed: false })),
+    sets: Array.from({ length: sets }, (_, index) => ({
+      reps: setTargets?.[index]?.reps ?? reps,
+      weight: setTargets?.[index]?.weight ?? weight,
+      rir: null,
+      completed: false,
+    })),
   };
 }
 
@@ -214,12 +221,76 @@ export function replaceWorkoutWithRoutine(routine: DailyRoutine, date: string): 
   return {
     date,
     exercises: routine.exercises.map((item) =>
-      createWorkoutExercise(item.exercise, item.targetSets, item.targetReps, item.targetWeight),
+      createWorkoutExercise(
+        item.exercise,
+        item.targetSets,
+        item.targetReps,
+        item.targetWeight,
+        item.setTargets,
+      ),
     ),
     cardioExercises: routine.cardioExercises.map((item) =>
       createCardioWorkoutExercise(item.equipment, item.durationMinutes, item.distanceMiles),
     ),
   };
+}
+
+/**
+ * Persist one completed set onto the matching routine exercise by id.
+ * Fills a dense targetSets-length array so later slots keep their last
+ * value (or the legacy single-target default). Returns the original
+ * routine when the exercise is not on the preset or the set is out of range.
+ */
+export function applyCompletedSetToRoutine(
+  routine: DailyRoutine,
+  exerciseId: string,
+  setIndex: number,
+  reps: number,
+  weight: number,
+  exerciseIndex?: number,
+): DailyRoutine {
+  const matchIndex =
+    exerciseIndex !== undefined && routine.exercises[exerciseIndex]?.exercise.id === exerciseId
+      ? exerciseIndex
+      : routine.exercises.findIndex((item) => item.exercise.id === exerciseId);
+  if (matchIndex === -1) return routine;
+  const matched = routine.exercises[matchIndex];
+  if (setIndex < 0 || setIndex >= matched.targetSets) return routine;
+
+  return {
+    ...routine,
+    exercises: routine.exercises.map((item, index) => {
+      if (index !== matchIndex) return item;
+      const nextTargets = densifySetTargets(item);
+      nextTargets[setIndex] = { reps, weight };
+      return { ...item, setTargets: nextTargets };
+    }),
+  };
+}
+
+export function densifySetTargets(item: {
+  targetSets: number;
+  targetReps: number;
+  targetWeight: number;
+  setTargets?: RoutineSetTarget[];
+}): RoutineSetTarget[] {
+  return Array.from({ length: item.targetSets }, (_, index) =>
+    item.setTargets?.[index] ?? { reps: item.targetReps, weight: item.targetWeight },
+  );
+}
+
+function parseSetTargets(value: unknown): RoutineSetTarget[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const parsed: RoutineSetTarget[] = [];
+  let found = false;
+  value.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+    const candidate = entry as { reps?: unknown; weight?: unknown };
+    if (typeof candidate.reps !== 'number' || typeof candidate.weight !== 'number') return;
+    parsed[index] = { reps: candidate.reps, weight: candidate.weight };
+    found = true;
+  });
+  return found ? parsed : undefined;
 }
 
 /* ------------------------------------------------------------------ */
@@ -344,6 +415,7 @@ export function mapRoutineRowsToWeeklyRoutines(
             targetSets: item.target_sets ?? 1,
             targetReps: item.target_reps ?? 10,
             targetWeight: item.target_weight ?? 0,
+            setTargets: parseSetTargets(item.set_targets),
           },
         ];
       }),
@@ -377,6 +449,7 @@ export function mapRoutineItems(routine: DailyRoutine): RoutineItemInsertRow[] {
         target_sets: item.targetSets,
         target_reps: item.targetReps,
         target_weight: item.targetWeight,
+        ...(item.setTargets?.length ? { set_targets: densifySetTargets(item) } : {}),
         cardio_equipment_id: null,
         cardio_equipment_name: null,
         duration_minutes: null,

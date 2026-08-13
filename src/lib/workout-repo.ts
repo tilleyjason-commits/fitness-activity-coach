@@ -189,7 +189,7 @@ export async function getWeeklyRoutines(userId: string): Promise<WeeklyRoutines>
   const { data: itemData, error: itemError } = await supabase
     .from('routine_items')
     .select(
-      'id, routine_id, item_type, exercise_id, exercise_name, muscle_group, target_sets, target_reps, target_weight, cardio_equipment_id, cardio_equipment_name, duration_minutes, distance_miles, sort_order',
+      'id, routine_id, item_type, exercise_id, exercise_name, muscle_group, target_sets, target_reps, target_weight, set_targets, cardio_equipment_id, cardio_equipment_name, duration_minutes, distance_miles, sort_order',
     )
     .in(
       'routine_id',
