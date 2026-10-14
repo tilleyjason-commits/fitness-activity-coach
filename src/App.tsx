@@ -1,4 +1,4 @@
-import { HashRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { HashRouter, Navigate, Outlet, Route, Routes, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { NavBar } from '~/components/NavBar';
@@ -23,6 +23,7 @@ const WeeklySummary = lazy(() => import('~/pages/WeeklySummary'));
 const Settings = lazy(() => import('~/pages/Settings'));
 const ManageSupplements = lazy(() => import('~/pages/ManageSupplements'));
 const SetupWizard = lazy(() => import('~/pages/SetupWizard'));
+const ResetPassword = lazy(() => import('~/pages/ResetPassword'));
 
 function LoadingScreen({ stalled = false }: { stalled?: boolean }) {
   return (
@@ -129,13 +130,25 @@ function AuthGuard() {
   );
 }
 
+/** Opening a recovery email signs the user in; send them to the new-password form, not the dashboard. */
+function RecoveryRedirect() {
+  const { passwordRecovery } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (passwordRecovery) navigate('/reset-password', { replace: true });
+  }, [passwordRecovery, navigate]);
+  return null;
+}
+
 /** HashRouter keeps client-side routes compatible with static GitHub Pages hosting. */
 export default function App() {
   return (
     <HashRouter>
+      <RecoveryRedirect />
       <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           {/* Outside the AuthGuard so no NavBar renders; SetupWizard checks auth itself. */}
           <Route path="/setup" element={<SetupWizard />} />
           <Route element={<AuthGuard />}>
