@@ -28,6 +28,7 @@ import {
 import {
   flushWorkoutSaveQueue,
   hasPendingWorkoutSaves,
+  dequeueWorkoutSave,
   saveWorkoutWithOfflineQueue,
 } from '~/lib/workout-offline-queue';
 import {
@@ -398,6 +399,9 @@ export default function TrainingPage() {
       await (autosaveRef.current?.flush() ?? saveWorkoutState(workout));
       await routineAutosaveRef.current?.flush();
       await completeWorkout(user.id, today);
+      // The workout is final: drop any queued snapshot so a later flush cannot
+      // replay stale state and recreate an active workout for this date.
+      dequeueWorkoutSave(user.id, today);
       clearWorkoutDraft(user.id);
       clearPersistedTimer();
       setWorkout(null);

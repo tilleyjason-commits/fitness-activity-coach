@@ -16,6 +16,7 @@ import {
   type RecentMeal,
 } from '~/lib/db';
 import {
+  dequeueMealSave,
   flushMealSaveQueue,
   hasPendingMealSaves,
   saveMealWithOfflineQueue,
@@ -191,6 +192,9 @@ export default function MacroTrackerPage() {
   async function handleClear(slot: MealSlot): Promise<void> {
     if (!log) return;
     await deleteMeal(log.id, slot);
+    // A queued offline save for this slot would otherwise be replayed later
+    // and bring the cleared meal back.
+    if (user) dequeueMealSave(user.id, date, slot);
     await Promise.all([loadMeals(log.id), reload()]);
   }
 

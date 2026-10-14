@@ -10,9 +10,6 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import { stabilizeSession } from '~/lib/auth-session';
 import { supabase } from '~/lib/supabase';
-import { quarantineDailyLogSaveQueue } from '~/lib/daily-log-offline-queue';
-import { quarantineMealSaveQueue } from '~/lib/meal-offline-queue';
-import { quarantineWorkoutSaveQueue } from '~/lib/workout-offline-queue';
 
 interface AuthContextValue {
   user: User | null;
@@ -82,17 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    const outgoingUserId = session?.user?.id;
+    // Offline queues are stored under a per-user key, so a different account
+    // signing in next can never see or flush them. They are intentionally left
+    // in place so the same user's unsynced saves are still there on next login.
     await supabase.auth.signOut();
-    // Quarantine (not delete) any offline-queued saves for the account that
-    // just signed out, so a different account signing in on this device next
-    // can never inherit or auto-flush them.
-    if (outgoingUserId) {
-      quarantineDailyLogSaveQueue(outgoingUserId);
-      quarantineMealSaveQueue(outgoingUserId);
-      quarantineWorkoutSaveQueue(outgoingUserId);
-    }
-  }, [session]);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({

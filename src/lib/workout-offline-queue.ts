@@ -139,6 +139,34 @@ export function clearWorkoutSaveQueue(userId: string): void {
 }
 
 /**
+ * Drop the queued snapshot for a date. Called when a live save for that date
+ * succeeds (the queued snapshot is now older than what the server has) and
+ * when the workout is finished, so a later flush cannot write stale state or
+ * recreate an active workout for a day that is already completed.
+ */
+export function dequeueWorkoutSave(userId: string, date: string): void {
+  const queue = readQueue(userId);
+  const next = queue.filter((item) => item.snapshot.date !== date);
+  if (next.length !== queue.length) writeQueue(userId, next);
+}
+
+function removeById(userId: string, id: string): void {
+  writeQueue(
+    userId,
+    readQueue(userId).filter((item) => item.id !== id),
+  );
+}
+
+function recordFailure(userId: string, id: string, lastError: string): void {
+  writeQueue(
+    userId,
+    readQueue(userId).map((item) =>
+      item.id === id ? { ...item, attempts: item.attempts + 1, lastError } : item,
+    ),
+  );
+}
+
+/**
  * Attempt every pending save for this user with the provided saver.
  * Successful items are removed; failures stay queued with incremented attempt
  * counts. Any item whose userId doesn't match the caller (should be
@@ -158,26 +186,24 @@ export async function flushWorkoutSaveQueue(
   }
 
   const owned = queue.filter((item) => item.userId === userId);
-  const remaining: QueuedWorkoutSave[] = [];
   let flushed = 0;
   let lastError: string | null = null;
 
   for (const item of owned) {
+    // A live save or finish may have dequeued or replaced this item while an
+    // earlier item was in flight. Replaying it now would overwrite newer data.
+    if (!readQueue(userId).some((current) => current.id === item.id)) continue;
     try {
       await save(item.snapshot);
       flushed += 1;
+      removeById(userId, item.id);
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'Offline sync failed';
-      remaining.push({
-        ...item,
-        attempts: item.attempts + 1,
-        lastError,
-      });
+      recordFailure(userId, item.id, lastError);
     }
   }
 
-  writeQueue(userId, remaining);
-  return { flushed, remaining: remaining.length, lastError };
+  return { flushed, remaining: readQueue(userId).length, lastError };
 }
 
 /**
@@ -191,6 +217,9 @@ export async function saveWorkoutWithOfflineQueue(
 ): Promise<void> {
   try {
     await save(snapshot);
+    // The server now has this date's newest state; any queued snapshot for the
+    // same date is stale and must never be replayed over it.
+    dequeueWorkoutSave(userId, snapshot.date);
     // Opportunistically drain older queued days after a successful online save.
     if (hasPendingWorkoutSaves(userId)) {
       void flushWorkoutSaveQueue(userId, save);

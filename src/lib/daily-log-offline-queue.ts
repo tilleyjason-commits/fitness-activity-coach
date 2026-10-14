@@ -112,6 +112,51 @@ export function clearDailyLogSaveQueue(userId: string): void {
 }
 
 /**
+ * A live save just wrote `patch` for `date`. Remove those fields from any
+ * queued patch for the same date (they are now older than the server copy)
+ * and drop the queue item if nothing is left. Fields the live save did not
+ * touch stay queued: they are still unsaved.
+ */
+export function supersedeDailyLogSave(
+  userId: string,
+  date: string,
+  patch: Partial<DailyLog>,
+): void {
+  const queue = readQueue(userId);
+  const written = new Set(Object.keys(patch));
+  let changed = false;
+  const next: QueuedDailyLogSave[] = [];
+  for (const item of queue) {
+    if (item.date !== date) {
+      next.push(item);
+      continue;
+    }
+    const kept = Object.fromEntries(
+      Object.entries(item.patch).filter(([key]) => !written.has(key)),
+    ) as Partial<DailyLog>;
+    if (Object.keys(kept).length !== Object.keys(item.patch).length) changed = true;
+    if (Object.keys(kept).length > 0) next.push({ ...item, patch: kept });
+  }
+  if (changed) writeQueue(userId, next);
+}
+
+function removeById(userId: string, id: string): void {
+  writeQueue(
+    userId,
+    readQueue(userId).filter((item) => item.id !== id),
+  );
+}
+
+function recordFailure(userId: string, id: string, lastError: string): void {
+  writeQueue(
+    userId,
+    readQueue(userId).map((item) =>
+      item.id === id ? { ...item, attempts: item.attempts + 1, lastError } : item,
+    ),
+  );
+}
+
+/**
  * Attempt every pending save for this user. Successful items are removed;
  * failures stay queued with incremented attempt counts. Items whose stored
  * userId doesn't match the caller are quarantined instead of replayed.
@@ -127,22 +172,29 @@ export async function flushDailyLogSaveQueue(
   if (mismatched.length > 0) quarantine(mismatched);
 
   const owned = queue.filter((item) => item.userId === userId);
-  const remaining: QueuedDailyLogSave[] = [];
   const flushedDates: string[] = [];
   let lastError: string | null = null;
 
   for (const item of owned) {
+    // Re-read: a live save may have superseded some or all of this patch.
+    const current = readQueue(userId).find((q) => q.id === item.id);
+    if (!current) continue;
     try {
-      await save(item.date, item.patch);
-      flushedDates.push(item.date);
+      await save(current.date, current.patch);
+      flushedDates.push(current.date);
+      removeById(userId, current.id);
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'Offline sync failed';
-      remaining.push({ ...item, attempts: item.attempts + 1, lastError });
+      recordFailure(userId, current.id, lastError);
     }
   }
 
-  writeQueue(userId, remaining);
-  return { flushed: flushedDates.length, remaining: remaining.length, flushedDates, lastError };
+  return {
+    flushed: flushedDates.length,
+    remaining: readQueue(userId).length,
+    flushedDates,
+    lastError,
+  };
 }
 
 /**
@@ -157,6 +209,7 @@ export async function saveDailyLogWithOfflineQueue(
 ): Promise<DailyLog> {
   try {
     const result = await save(date, patch);
+    supersedeDailyLogSave(userId, date, patch);
     if (hasPendingDailyLogSaves(userId)) {
       void flushDailyLogSaveQueue(userId, save);
     }
