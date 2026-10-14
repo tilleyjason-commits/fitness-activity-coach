@@ -488,10 +488,39 @@ export const EMPTY_WEEKLY: WeeklyDerived = {
   missed_sessions: null,
 };
 
+/** Hours slept between bedtime and waketime (HH:MM), crossing midnight. Null if either is missing. */
+export function sleepHours(bedtime: string | null, waketime: string | null): number | null {
+  if (!bedtime || !waketime) return null;
+  const toMin = (hhmm: string): number | null => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(hhmm);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const bed = toMin(bedtime);
+  const wake = toMin(waketime);
+  if (bed === null || wake === null) return null;
+  const minutes = (wake - bed + 24 * 60) % (24 * 60);
+  return Math.round((minutes / 60) * 10) / 10;
+}
+
+/** Whole weeks between the last deload and the log date. Null when no deload is recorded. */
+export function weeksSinceDeload(lastDeload: string | null, logDate: string): number | null {
+  if (!lastDeload) return null;
+  const ms = Date.parse(`${logDate}T00:00:00Z`) - Date.parse(`${lastDeload.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(ms) || ms < 0) return null;
+  return Math.floor(ms / (7 * 24 * 60 * 60 * 1000));
+}
+
+/** Today's date in the device's local zone as yyyy-MM-dd. */
+export function localToday(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 export function buildContext(
   log: DailyLog,
   weekly: WeeklyDerived = EMPTY_WEEKLY,
   profile: Profile | null = null,
+  today: string = localToday(),
 ): EvalContext {
   const targets = resolveTargets(profile);
   const timing = resolveMealTiming(profile);
@@ -534,6 +563,19 @@ export function buildContext(
     weekly_weight_lb: log.weekly_weight_lb,
     weekly_waist_inches: log.weekly_waist_inches,
 
+    // Fields rules reference that the engine used to omit (null => rule skipped, never failed)
+    sleep_hours: sleepHours(toHHMM(log.bedtime), toHHMM(log.waketime)),
+    meals_count: log.meals_count,
+    session_minutes: log.session_minutes,
+    compound_rest: log.compound_rest_sec,
+    isolation_rest: log.isolation_rest_sec,
+    full_rom_followed: log.full_rom_followed,
+    weeks_since_deload: weeksSinceDeload(log.last_deload_date, log.log_date),
+    caffeine_mg_per_kg:
+      log.caffeine_mg !== null && profile?.weight_lb
+        ? Math.round((log.caffeine_mg / (profile.weight_lb / 2.20462)) * 10) / 10
+        : null,
+
     // Aliases the rule DSL uses
     daily_protein: log.daily_protein_g,
     day: log.day_of_week,
@@ -570,8 +612,10 @@ export function buildContext(
     // Weekly derived metrics
     ...weekly,
 
-    // Trigger synthetics
-    day_complete: true,
+    // Trigger synthetics. End-of-day rules (casein, 3 p.m. snack, supplements,
+    // wake time...) only score a day that is over. Scoring today's row would
+    // fail every morning default for things the user has not had time to do.
+    day_complete: log.log_date < today,
     nutrition_logged: log.daily_calories !== null || log.daily_protein_g !== null,
     training_time: toHHMM(profile?.training_time ?? timing.training),
 
@@ -610,8 +654,9 @@ export function evaluateDay(
   log: DailyLog,
   weekly: WeeklyDerived = EMPTY_WEEKLY,
   profile: Profile | null = null,
+  today: string = localToday(),
 ): RuleResult[] {
-  const context = buildContext(log, weekly, profile);
+  const context = buildContext(log, weekly, profile, today);
   return getAllRules().map((rule) => {
     if (!checkTrigger(rule.trigger, context)) {
       return { rule, status: 'skipped' as const, message: rule.description };

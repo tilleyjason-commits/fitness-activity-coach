@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildContext,
+  sleepHours,
+  weeksSinceDeload,
   checkTrigger,
+  evaluateDay,
   evaluateRule,
   getRuleById,
   isCaffeineBeforeCutoff,
@@ -207,5 +210,46 @@ describe('profile-relative timing rules', () => {
     );
     expect(evaluateRule(rule!, passCtx).status).toBe('pass');
     expect(evaluateRule(rule!, failCtx).status).toBe('fail');
+  });
+});
+
+describe('end-of-day gating and previously omitted context fields', () => {
+  const logFor = (log_date: string, overrides: Partial<DailyLog> = {}) =>
+    minimalLog({ log_date, ...overrides });
+  const statusOf = (results: ReturnType<typeof evaluateDay>, id: string) =>
+    results.find((r) => r.rule.id === id)?.status;
+
+  it("does not score end-of-day rules on today's row", () => {
+    const results = evaluateDay(logFor('2026-10-13'), undefined, null, '2026-10-13');
+    expect(statusOf(results, 'evening_casein')).toBe('skipped');
+    expect(statusOf(results, 'snack_3pm_critical')).toBe('skipped');
+    expect(statusOf(results, 'creatine_daily')).toBe('skipped');
+  });
+
+  it('scores them once the day is over', () => {
+    const results = evaluateDay(logFor('2026-10-12'), undefined, null, '2026-10-13');
+    expect(statusOf(results, 'evening_casein')).toBe('fail');
+    expect(statusOf(results, 'creatine_daily')).toBe('fail');
+    const done = evaluateDay(
+      logFor('2026-10-12', { casein_taken: true, creatine_taken: true }),
+      undefined,
+      null,
+      '2026-10-13',
+    );
+    expect(statusOf(done, 'evening_casein')).toBe('pass');
+  });
+
+  it('computes sleep hours across midnight and skips when unlogged', () => {
+    expect(sleepHours('22:30', '06:00')).toBe(7.5);
+    expect(sleepHours('01:00', '08:30')).toBe(7.5);
+    expect(sleepHours(null, '06:00')).toBeNull();
+    const ctx = buildContext(logFor('2026-10-12', { bedtime: '23:00', waketime: '06:30' }));
+    expect(ctx.sleep_hours).toBe(7.5);
+    expect(buildContext(logFor('2026-10-12')).sleep_hours).toBeNull();
+  });
+
+  it('derives weeks since deload', () => {
+    expect(weeksSinceDeload('2026-09-01', '2026-10-13')).toBe(6);
+    expect(weeksSinceDeload(null, '2026-10-13')).toBeNull();
   });
 });
