@@ -44,7 +44,7 @@ export function WorkoutHistory({ history, loading, error, onRetry, limit }: Work
   if (error) {
     return (
       <div className="card text-center">
-        <p className="mb-3 text-sm text-red-500">{error}</p>
+        <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>
         <button
           type="button"
           onClick={onRetry}
@@ -91,7 +91,7 @@ export function WorkoutHistory({ history, loading, error, onRetry, limit }: Work
                   {entry.totalCardioMiles > 0 && ` · ${entry.totalCardioMiles} mi`}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-2 text-slate-400 dark:text-slate-500">
+              <div className="flex shrink-0 items-center gap-2 text-slate-500 dark:text-slate-400">
                 <span className="text-xs">
                   {totalExercises} exercise{totalExercises === 1 ? '' : 's'}
                 </span>

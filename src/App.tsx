@@ -120,10 +120,10 @@ function AuthGuard() {
   // Phone: single column with the tab bar fixed to the bottom. Desktop (md+):
   // the same column, centred beside a sticky nav rail.
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-4xl">
+    <div className="mx-auto flex min-h-screen w-full max-w-6xl">
       <ReminderScheduler />
       <NavBar />
-      <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 md:pb-10 md:pt-8">
+      <main className="mx-auto w-full max-w-md px-4 pb-28 pt-6 md:max-w-2xl md:pb-10 md:pt-8 lg:max-w-3xl">
         <Outlet />
       </main>
     </div>

@@ -21,7 +21,7 @@ export function ToggleRow({ label, description, checked, onChange, icon, disable
       onClick={() => onChange(!checked)}
       className="card flex w-full items-center gap-3 text-left disabled:opacity-60"
     >
-      {icon && <span className="shrink-0 text-slate-400 dark:text-slate-500">{icon}</span>}
+      {icon && <span className="shrink-0 text-slate-500 dark:text-slate-400">{icon}</span>}
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{label}</span>
         {description && (

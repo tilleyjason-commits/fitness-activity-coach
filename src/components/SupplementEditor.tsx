@@ -190,7 +190,7 @@ export function SupplementEditor({ supplement, onSave, onCancel, onDelete }: Sup
           aria-label={`Delete ${supplement.name}?`}
           className="rounded-xl border border-red-300 bg-red-50 p-3 dark:border-red-500/40 dark:bg-red-900/20"
         >
-          <p className="mb-3 text-sm text-red-700 dark:text-red-300">
+          <p role="alert" className="mb-3 text-sm text-red-700 dark:text-red-300">
             Delete {supplement.name} and its check-in history? This removes its check-ins from the
             supplement log. Past daily-log records are kept.
           </p>

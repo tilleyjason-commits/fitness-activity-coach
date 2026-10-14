@@ -14,34 +14,34 @@ const SEVERITY_STYLES: Record<Severity, SeverityStyle> = {
   critical: {
     border: 'border-l-red-500',
     iconColor: 'text-red-500',
-    badge: 'bg-red-500/15 text-red-600 dark:text-red-400',
+    badge: 'bg-red-500/15 text-red-700 dark:text-red-400',
     icon: AlertTriangle,
     label: 'Critical',
   },
   high: {
     border: 'border-l-orange-500',
     iconColor: 'text-orange-500',
-    badge: 'bg-orange-500/15 text-orange-600 dark:text-orange-400',
+    badge: 'bg-orange-500/15 text-orange-700 dark:text-orange-400',
     icon: AlertTriangle,
     label: 'High',
   },
   medium: {
     border: 'border-l-amber-500',
     iconColor: 'text-amber-500',
-    badge: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    badge: 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
     icon: AlertCircle,
     label: 'Medium',
   },
   low: {
     border: 'border-l-blue-400',
-    iconColor: 'text-blue-400',
+    iconColor: 'text-blue-600 dark:text-blue-400',
     badge: 'bg-blue-400/15 text-blue-600 dark:text-blue-300',
     icon: Info,
     label: 'Low',
   },
   info: {
     border: 'border-l-slate-400',
-    iconColor: 'text-slate-400',
+    iconColor: 'text-slate-500 dark:text-slate-400',
     badge: 'bg-slate-400/15 text-slate-600 dark:text-slate-300',
     icon: Info,
     label: 'Info',
@@ -112,7 +112,7 @@ export function RecommendationCard({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss recommendation"
-          className="-m-2.5 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+          className="-m-2.5 flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200"
         >
           <X className="h-4 w-4" />
         </button>

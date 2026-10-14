@@ -177,7 +177,7 @@ export default function LogSleep() {
         </div>
       </section>
 
-      {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <button type="submit" disabled={saving || loading} className="btn-primary">
         {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}

@@ -5,6 +5,7 @@ import type { WorkoutState as WorkoutStateType } from '~/lib/types';
 import { useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
 import { CheckCircle2, Loader2, Play, Plus, RefreshCw } from 'lucide-react';
+import { useFocusTrap } from '~/hooks/useFocusTrap';
 import { useAuth } from '~/context/AuthContext';
 import { PageHeader } from '~/components/PageHeader';
 import { TrainingTabs } from '~/components/TrainingTabs';
@@ -120,6 +121,11 @@ export default function TrainingPage() {
 
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const finishDialogRef = useRef<HTMLDivElement>(null);
+  const closeFinishDialog = useCallback(() => {
+    if (!finishing) setConfirmFinish(false);
+  }, [finishing]);
+  useFocusTrap(finishDialogRef, confirmFinish && workout !== null, closeFinishDialog);
 
   // True when local workout state has edits not yet handed to the autosaver.
   const dirtyRef = useRef(false);
@@ -446,7 +452,7 @@ export default function TrainingPage() {
         <LoadingSkeleton />
       ) : loadError ? (
         <div className="card text-center">
-          <p className="mb-3 text-sm text-red-500">{loadError}</p>
+          <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{loadError}</p>
           <button
             type="button"
             onClick={loadWorkout}
@@ -547,7 +553,7 @@ export default function TrainingPage() {
           </section>
 
           {saveError && (
-            <p role="alert" className="text-sm text-red-500">
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
               {saveError}
             </p>
           )}
@@ -598,13 +604,18 @@ export default function TrainingPage() {
       )}
 
       {confirmFinish && workout && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-6"
-          role="dialog"
-          aria-label="Finish workout confirmation"
-        >
-          <div className="card w-full max-w-sm text-center shadow-xl">
-            <h3 className="mb-1 text-base font-bold">Finish workout?</h3>
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-6">
+          <div
+            ref={finishDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="finish-workout-title"
+            tabIndex={-1}
+            className="card w-full max-w-sm text-center shadow-xl"
+          >
+            <h3 id="finish-workout-title" className="mb-1 text-base font-bold">
+              Finish workout?
+            </h3>
             <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
               {totals?.completedSets ?? 0}/{totals?.totalSets ?? 0} sets completed. It will be saved
               to your history and summarized into today's log.
@@ -622,7 +633,7 @@ export default function TrainingPage() {
                 type="button"
                 onClick={handleFinishWorkout}
                 disabled={finishing}
-                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:opacity-50"
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:opacity-50"
               >
                 {finishing && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
                 Finish

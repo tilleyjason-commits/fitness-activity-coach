@@ -572,7 +572,7 @@ export default function WeeklySummary() {
       <h2 className="section-title">Week detail</h2>
       {weekPager}
 
-      {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       {weekLogs.length === 0 ? (
         <div className="card mb-4 text-sm text-slate-600 dark:text-slate-300">
@@ -583,7 +583,7 @@ export default function WeeklySummary() {
           <div className="flex gap-2">
             <Link
               to="/macros"
-              className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-emerald-600"
+              className="flex-1 rounded-xl bg-emerald-700 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-emerald-800"
             >
               Log a meal
             </Link>

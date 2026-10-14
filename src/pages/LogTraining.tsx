@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { useDailyLog } from '~/hooks/useDailyLog';
+import { Link } from 'react-router-dom';
+import { useAuth } from '~/context/AuthContext';
 import { getExerciseLogs, replaceExerciseLogs } from '~/lib/db';
+import { hasCompletedWorkout } from '~/lib/workout-repo';
 import {
   SESSION_TEMPLATES,
   SESSION_TYPES,
@@ -41,6 +44,25 @@ export default function LogTraining() {
   const today = format(new Date(), 'yyyy-MM-dd');
   const [date, setDate] = useState(today);
   const { log, loading, saving, error, save } = useDailyLog(date);
+  const { user } = useAuth();
+  const [hasLiveWorkout, setHasLiveWorkout] = useState(false);
+
+  // A session logged live on the Workout tab already feeds the coach. Saving
+  // this form for the same date would replace its exercise summary.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    hasCompletedWorkout(user.id, date)
+      .then((v) => {
+        if (active) setHasLiveWorkout(v);
+      })
+      .catch(() => {
+        if (active) setHasLiveWorkout(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user, date]);
 
   const [session, setSession] = useState<SessionType>(() => defaultSession(today));
   const [entries, setEntries] = useState<ExerciseEntry[]>([]);
@@ -156,7 +178,23 @@ export default function LogTraining() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="Log Training" subtitle="Session, exercises, and effort" backTo="/log" />
+      <PageHeader
+        title="Add a Missed Session"
+        subtitle="For training you did not track live"
+        backTo="/log"
+      />
+
+      {hasLiveWorkout && (
+        <div role="status" className="card mb-4 border-l-4 border-l-amber-500">
+          <p className="text-sm text-slate-700 dark:text-slate-200">
+            A workout was already logged live for this date, and the coach is scoring it. Saving
+            this form replaces that day&apos;s exercise summary.{' '}
+            <Link to="/training" className="font-semibold underline">
+              Open the Workout tab
+            </Link>
+          </p>
+        </div>
+      )}
 
       <div className="mb-4 grid grid-cols-2 gap-3">
         <div>
@@ -335,7 +373,7 @@ export default function LogTraining() {
         </div>
       </section>
 
-      {(error || saveError) && <p className="mb-3 text-sm text-red-500">{error ?? saveError}</p>}
+      {(error || saveError) && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error ?? saveError}</p>}
 
       <button type="submit" disabled={saving || loading} className="btn-primary">
         {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}

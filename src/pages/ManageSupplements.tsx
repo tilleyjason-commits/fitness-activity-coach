@@ -111,7 +111,7 @@ export default function ManageSupplements() {
         </div>
       ) : error ? (
         <div className="card">
-          <p className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>
+          <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>
           <button type="button" onClick={() => void reload()} className="btn-primary">
             <RefreshCw className="h-4 w-4" aria-hidden />
             Retry

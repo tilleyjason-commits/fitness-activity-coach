@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { format } from 'date-fns';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { format, parseISO } from 'date-fns';
 import { ChevronRight, Loader2, Minus, Plus, Sparkles } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
@@ -60,7 +60,12 @@ export default function LogNutrition() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const today = format(new Date(), 'yyyy-MM-dd');
-  const { log, loading, saving, error, save } = useDailyLog(today);
+  // Past days are editable: /log/nutrition?date=yyyy-MM-dd (the picker below sets it too).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get('date');
+  const date =
+    requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today ? requested : today;
+  const { log, loading, saving, error, save } = useDailyLog(date);
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const [protein, setProtein] = useState('');
@@ -87,7 +92,22 @@ export default function LogNutrition() {
   const targets = resolveTargets(profile);
 
   useEffect(() => {
-    if (!log) return;
+    if (!log) {
+      // A date with no row yet starts blank instead of keeping the previous date's values.
+      setProtein('');
+      setCalories('');
+      setCarbs('');
+      setFat('');
+      setPreGymTime('');
+      setPostGymTime('');
+      setSnack3pm(false);
+      setCasein(false);
+      setDinnerLogged(false);
+      setDinnerPlates(1);
+      setProteinFirst(false);
+      setCandy(0);
+      return;
+    }
     setProtein(toStr(log.daily_protein_g));
     setCalories(toStr(log.daily_calories));
     setCarbs(toStr(log.daily_carbs_g));
@@ -132,7 +152,27 @@ export default function LogNutrition() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <PageHeader title="Adjust Daily Totals" subtitle={format(new Date(), 'EEEE, MMMM d')} backTo="/log" />
+      <PageHeader
+        title="Daily Totals & Timing"
+        subtitle={format(parseISO(date), 'EEEE, MMMM d')}
+        backTo="/log"
+      />
+
+      <div className="mb-4">
+        <label htmlFor="nutrition-date" className="label">
+          Date
+        </label>
+        <input
+          id="nutrition-date"
+          type="date"
+          value={date}
+          max={today}
+          onChange={(e) => {
+            if (e.target.value) setSearchParams({ date: e.target.value }, { replace: true });
+          }}
+          className="field"
+        />
+      </div>
 
       <Link
         to="/macros"
@@ -159,7 +199,7 @@ export default function LogNutrition() {
           </label>
           <span className={`text-sm font-semibold tabular-nums ${proteinStatus}`}>
             {proteinValue ?? 'â€”'} g
-            <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
+            <span className="ml-1 font-normal text-slate-500 dark:text-slate-400">
               / {targets.proteinMinG}–{targets.proteinMaxG} g
             </span>
           </span>
@@ -309,7 +349,7 @@ export default function LogNutrition() {
         <Stepper label="Candy cravings today" value={candy} min={0} max={20} onChange={setCandy} />
       </section>
 
-      {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <button type="submit" disabled={saving || loading} className="btn-primary">
         {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}

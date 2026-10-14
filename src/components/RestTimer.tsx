@@ -228,7 +228,7 @@ export function RestTimer({ autoStartKey, initialSeconds = 90, onClose, onSaveDe
                 setTimer((current) => startTimer(current, now));
               }}
               disabled={secondsLeft === 0}
-              className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Play className="h-4 w-4" aria-hidden />
               Start

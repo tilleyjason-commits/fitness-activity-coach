@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '~/pages/Dashboard';
 import { createEmptyWeeklyRoutines, getTodayWeekday } from '~/lib/workout-mappers';
@@ -35,9 +36,12 @@ vi.mock('~/hooks/useDailyLog', () => ({
   }),
 }));
 
+// Stable reference: a fresh [] on every call would re-fire Dashboard's
+// recommendation effect (dependency on `supplements`) on every render.
+const NO_SUPPLEMENTS: never[] = [];
 vi.mock('~/hooks/useSupplements', () => ({
   useSupplements: () => ({
-    supplements: [],
+    supplements: NO_SUPPLEMENTS,
     loading: false,
     error: null,
     add: vi.fn(),
@@ -191,14 +195,23 @@ describe("Today's Workout card", () => {
     expect(within(card).getByRole('link')).toHaveAttribute('href', '/training');
   });
 
-  it('falls back to a useful generic card when workout data cannot load', async () => {
+  it('says the load failed (not "no routine") and recovers on retry', async () => {
     repo.getActiveWorkout.mockRejectedValue(new Error('offline'));
     repo.getWeeklyRoutines.mockRejectedValue(new Error('offline'));
     repo.hasCompletedWorkout.mockRejectedValue(new Error('offline'));
     renderDashboard();
 
     const card = await screen.findByRole('region', { name: "Today's workout" });
-    expect(await within(card).findByRole('link', { name: /workout/i })).toHaveAttribute(
+    expect(await within(card).findByRole('alert')).toHaveTextContent(/couldn.t load/i);
+    expect(within(card).queryByText(/no routine for today/i)).not.toBeInTheDocument();
+
+    repo.getActiveWorkout.mockResolvedValue(null);
+    repo.getWeeklyRoutines.mockResolvedValue(createEmptyWeeklyRoutines());
+    repo.hasCompletedWorkout.mockResolvedValue(false);
+    await userEvent.setup().click(within(card).getByRole('button', { name: /retry/i }));
+
+    expect(await within(card).findByText(/no routine for today/i)).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: /workout/i })).toHaveAttribute(
       'href',
       '/training',
     );

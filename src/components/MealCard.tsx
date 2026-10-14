@@ -353,7 +353,7 @@ export function MealCard({
           aria-label={`Add ${MEAL_SLOT_LABELS[slot]}`}
           className="flex min-h-11 w-full items-center gap-2.5 text-left"
         >
-          <SlotIcon className="h-5 w-5 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
+          <SlotIcon className="h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400" aria-hidden />
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold">{MEAL_SLOT_LABELS[slot]}</span>
             <span className="block text-xs text-slate-500 dark:text-slate-400">
@@ -395,7 +395,7 @@ export function MealCard({
                     onClick={onToggleFavorite}
                     aria-pressed={isFavorited}
                     aria-label={isFavorited ? 'Remove from favorites' : 'Save as favorite'}
-                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-amber-500 dark:hover:bg-slate-700/60"
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-slate-100 hover:text-amber-500 dark:hover:bg-slate-700/60"
                   >
                     <Star
                       className={`h-4 w-4 ${isFavorited ? 'fill-amber-500 text-amber-500' : ''}`}
@@ -492,7 +492,7 @@ export function MealCard({
         </>
       ) : state === 'error' ? (
         <>
-          <p role="alert" className="mb-3 text-sm text-red-500">
+          <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">
             {error ?? 'Something went wrong.'}
           </p>
           <div className="flex flex-col gap-2">
@@ -559,7 +559,7 @@ export function MealCard({
                       type="button"
                       onClick={() => removeDraft(i)}
                       aria-label={`Remove ${draft.food_name}`}
-                      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-700"
+                      className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-slate-100 hover:text-red-500 dark:hover:bg-slate-700"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -639,7 +639,7 @@ export function MealCard({
               type="button"
               onClick={() => void handleCalculate()}
               disabled={busy || description.trim() === ''}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-700 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {state === 'calculating' ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />

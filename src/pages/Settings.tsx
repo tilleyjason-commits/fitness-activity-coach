@@ -230,7 +230,7 @@ export default function Settings() {
           onChange={(checked) => void handleReminderMasterToggle(checked)}
           icon={<Bell className="h-5 w-5" aria-hidden />}
         />
-        {reminderError && <p className="mt-2 text-sm text-red-500">{reminderError}</p>}
+        {reminderError && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{reminderError}</p>}
         {reminderPrefs.enabled && (
           <div className="mt-2 space-y-2">
             {(Object.keys(REMINDER_CATEGORY_LABELS) as ReminderCategory[]).map((category) => (
@@ -257,7 +257,7 @@ export default function Settings() {
           <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" aria-hidden />
         </Link>
         <Link to="/settings/supplements" className="card flex w-full items-center gap-3">
-          <span className="shrink-0 text-slate-400 dark:text-slate-500">
+          <span className="shrink-0 text-slate-500 dark:text-slate-400">
             <Pill className="h-5 w-5" aria-hidden />
           </span>
           <span className="min-w-0 flex-1">
@@ -412,7 +412,7 @@ export default function Settings() {
             />
           </div>
           </div>
-          {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+          {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           {saved && !error && (
             <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">Profile updated.</p>
           )}

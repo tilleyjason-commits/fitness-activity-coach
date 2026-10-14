@@ -23,7 +23,7 @@ interface LogGroup {
   links: LogLink[];
 }
 
-/** Grouped by job-to-be-done: daily logging, the weekly check-in, and repairs. */
+/** Grouped by job-to-be-done: daily logging, the weekly check-in, and corrections. */
 const GROUPS: LogGroup[] = [
   {
     title: 'Today',
@@ -66,18 +66,18 @@ const GROUPS: LogGroup[] = [
     ],
   },
   {
-    title: 'Fix a past day',
+    title: 'Corrections',
     links: [
       {
         to: '/log/training',
-        label: 'Training backfill',
-        description: 'Mark a missed session complete',
+        label: 'Add a missed session',
+        description: 'Only for training you did not track live',
         icon: Dumbbell,
       },
       {
         to: '/log/nutrition',
-        label: 'Adjust daily totals',
-        description: 'Correct calories, protein, and timing flags',
+        label: 'Daily totals & timing',
+        description: 'Correct any day’s totals, casein, snack, and dinner flags',
         icon: UtensilsCrossed,
       },
     ],
