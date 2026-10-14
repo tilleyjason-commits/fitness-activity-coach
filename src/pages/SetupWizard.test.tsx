@@ -121,7 +121,7 @@ describe('SetupWizard save behavior', () => {
     expect(payload.user_id).toBe('user-abc');
     expect(payload.age).toBe(40);
     expect(payload.height_cm).toBe(182.9);
-    expect(navigateMock).toHaveBeenCalledWith('/log');
+    expect(navigateMock).toHaveBeenCalledWith('/macros');
   });
 
   it('stays on the wizard with an accessible retryable error when the save fails', async () => {
@@ -145,7 +145,7 @@ describe('SetupWizard save behavior', () => {
     upsertProfileMock.mockResolvedValue({ id: 'user-abc', user_id: 'user-abc' });
     await user.click(screen.getByRole('button', { name: /start first log/i }));
     expect(upsertProfileMock).toHaveBeenCalledTimes(2);
-    expect(navigateMock).toHaveBeenCalledWith('/log');
+    expect(navigateMock).toHaveBeenCalledWith('/macros');
   });
 });
 

@@ -20,11 +20,11 @@ function renderHub() {
 }
 
 describe('LogHub grouping', () => {
-  it('groups links under Today, Weekly check-in, and Fix a past day', () => {
+  it('groups links under Today, Weekly check-in, and Corrections', () => {
     renderHub();
     expect(screen.getByRole('heading', { name: 'Today' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Weekly check-in' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Fix a past day' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Corrections' })).toBeInTheDocument();
   });
 
   it('puts Log meal first in Today, pointing at the meal tracker', () => {
@@ -47,15 +47,15 @@ describe('LogHub grouping', () => {
     );
   });
 
-  it('renames the backfill pair with verb copy and no developer jargon', () => {
+  it('labels the correction pages as corrections, with no developer jargon', () => {
     renderHub();
-    const fix = screen.getByRole('region', { name: 'Fix a past day' });
-    expect(within(fix).getByRole('link', { name: /training backfill/i })).toHaveAttribute(
+    const fix = screen.getByRole('region', { name: 'Corrections' });
+    expect(within(fix).getByRole('link', { name: /add a missed session/i })).toHaveAttribute(
       'href',
       '/log/training',
     );
-    expect(within(fix).getByText('Mark a missed session complete')).toBeInTheDocument();
-    expect(within(fix).getByRole('link', { name: /adjust daily totals/i })).toHaveAttribute(
+    expect(within(fix).getByText('Only for training you did not track live')).toBeInTheDocument();
+    expect(within(fix).getByRole('link', { name: /daily totals & timing/i })).toHaveAttribute(
       'href',
       '/log/nutrition',
     );

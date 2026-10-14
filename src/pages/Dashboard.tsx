@@ -150,7 +150,8 @@ type TodayWorkout =
   | { kind: 'active'; workout: WorkoutState; routineName: string | null }
   | { kind: 'completed' }
   | { kind: 'routine'; routine: DailyRoutine }
-  | { kind: 'none' };
+  | { kind: 'none' }
+  | { kind: 'error' };
 
 /** One coach sentence from real training state — no invented metrics. */
 function coachLine(today: TodayWorkout): string | null {
@@ -168,9 +169,10 @@ function coachLine(today: TodayWorkout): string | null {
 
 /**
  * One glance answers "what's today's session?" — routine preset, in-flight
- * progress, or done. Failure to load degrades to the generic start card.
+ * progress, or done. A failed load says so and offers a retry; it never
+ * pretends there is no routine.
  */
-function TodayWorkoutCard({ today }: { today: TodayWorkout }) {
+function TodayWorkoutCard({ today, onRetry }: { today: TodayWorkout; onRetry: () => void }) {
   if (today.kind === 'loading') {
     return (
       <section className="card mb-4" aria-label="Today's workout">
@@ -184,6 +186,26 @@ function TodayWorkoutCard({ today }: { today: TodayWorkout }) {
             </span>
           </span>
           <Skeleton className="h-11 w-24 shrink-0 rounded-xl" />
+        </div>
+      </section>
+    );
+  }
+
+  if (today.kind === 'error') {
+    return (
+      <section className="card mb-4" aria-label="Today's workout">
+        <h2 className="section-title">Today&apos;s workout</h2>
+        <div className="flex items-center justify-between gap-3">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            Couldn&apos;t load today&apos;s workout. Your saved data is safe.
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="flex min-h-11 shrink-0 items-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+          >
+            Retry
+          </button>
         </div>
       </section>
     );
@@ -231,7 +253,7 @@ function TodayWorkoutCard({ today }: { today: TodayWorkout }) {
         </div>
         <Link
           to="/training"
-          className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-600"
+          className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-800"
         >
           <Play className="h-4 w-4" aria-hidden />
           {body.cta}
@@ -376,6 +398,9 @@ export default function Dashboard() {
   const [weighIns, setWeighIns] = useState<DailyLog[]>([]);
   const [weekly, setWeekly] = useState<WeeklyDerived>(EMPTY_WEEKLY);
   const [todayWorkout, setTodayWorkout] = useState<TodayWorkout>({ kind: 'loading' });
+  const [workoutAttempt, setWorkoutAttempt] = useState(0);
+  const [recsError, setRecsError] = useState(false);
+  const [recsAttempt, setRecsAttempt] = useState(0);
   const {
     supplements,
     loading: supplementsLoading,
@@ -431,8 +456,8 @@ export default function Dashboard() {
           setTodayWorkout({ kind: 'none' });
         }
       } catch {
-        // Degrade to the generic card — Home must render offline.
-        if (!cancelled) setTodayWorkout({ kind: 'none' });
+        // Say so. "No routine for today" would be a false statement here.
+        if (!cancelled) setTodayWorkout({ kind: 'error' });
       }
     }
 
@@ -440,7 +465,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [user, today]);
+  }, [user, today, workoutAttempt]);
 
   // Weekly-derived context (volume, weight/waist trend, weakest area) for the
   // rule engine — same current-week/prior-week window WeeklySummary uses.
@@ -490,7 +515,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (!user || loading || !profileLoaded || supplementsLoading) return;
     if (!log) {
-      setRecs([]);
+      // Functional update so an already-empty list does not trigger a re-render.
+      setRecs((current) => (current.length === 0 ? current : []));
       return;
     }
 
@@ -516,9 +542,15 @@ export default function Dashboard() {
           await reconcileInapplicableRecommendations(userId, today, inapplicableIds);
           next = await syncRecommendations(userId, today, applicable);
         }
-        if (!cancelled) setRecs(next);
+        if (!cancelled) {
+          setRecs(next);
+          setRecsError(false);
+        }
       } catch (error) {
-        if (!cancelled) console.error('Failed to refresh recommendations:', error);
+        if (!cancelled) {
+          console.error('Failed to refresh recommendations:', error);
+          setRecsError(true);
+        }
       }
     }
 
@@ -537,6 +569,7 @@ export default function Dashboard() {
     supplementsLoading,
     supplementsError,
     weekly,
+    recsAttempt,
   ]);
 
   const sortedRecs = useMemo(
@@ -580,7 +613,13 @@ export default function Dashboard() {
 
       <MacroHero log={log} targets={targets} />
 
-      <TodayWorkoutCard today={todayWorkout} />
+      <TodayWorkoutCard
+        today={todayWorkout}
+        onRetry={() => {
+          setTodayWorkout({ kind: 'loading' });
+          setWorkoutAttempt((n) => n + 1);
+        }}
+      />
 
       {/* Secondary glance: status only, each dot still its own shortcut. */}
       <section className="card mb-4 py-3" aria-label="Today's compliance">
@@ -601,6 +640,19 @@ export default function Dashboard() {
         <h2 className="section-title">Needs attention</h2>
         {loading || supplementsLoading ? (
           <SkeletonCard label="Evaluating today's rules" lines={['w-1/4', 'w-full', 'w-3/5']} />
+        ) : sortedRecs.length === 0 && recsError ? (
+          <div className="card flex items-center justify-between gap-3">
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              Couldn&apos;t refresh your coaching items, so this is not an all-clear.
+            </p>
+            <button
+              type="button"
+              onClick={() => setRecsAttempt((n) => n + 1)}
+              className="flex min-h-11 shrink-0 items-center rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200"
+            >
+              Retry
+            </button>
+          </div>
         ) : sortedRecs.length === 0 ? (
           <div className="card flex items-center gap-3">
             <CheckCircle2 className="h-6 w-6 shrink-0 text-emerald-500" aria-hidden />

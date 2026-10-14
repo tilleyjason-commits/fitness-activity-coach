@@ -153,7 +153,7 @@ export default function RoutinesPage() {
         </div>
       ) : loadError ? (
         <div className="card text-center">
-          <p className="mb-3 text-sm text-red-500">{loadError}</p>
+          <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{loadError}</p>
           <button
             type="button"
             onClick={loadRoutines}
@@ -267,7 +267,7 @@ export default function RoutinesPage() {
                       type="button"
                       onClick={() => setExercises((prev) => prev.filter((_, i) => i !== index))}
                       aria-label={`Remove ${item.exercise.name}`}
-                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-red-500/10 hover:text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -291,7 +291,7 @@ export default function RoutinesPage() {
                         setCardioExercises((prev) => prev.filter((_, i) => i !== index))
                       }
                       aria-label={`Remove ${item.equipment.name}`}
-                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                      className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-red-500/10 hover:text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -301,7 +301,7 @@ export default function RoutinesPage() {
             )}
           </section>
 
-          {saveError && <p className="text-sm text-red-500">{saveError}</p>}
+          {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
 
           <button type="button" onClick={handleSave} disabled={saving} className="btn-primary">
             {saving ? (

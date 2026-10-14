@@ -39,7 +39,7 @@ export function DayMacroSummary({
   ];
 
   return (
-    <section className="card sticky bottom-24 z-10 shadow-lg" aria-label="Daily total">
+    <section className="card sticky bottom-24 z-10 shadow-lg md:bottom-4" aria-label="Daily total">
       <h2 className="section-title mb-3">Daily total</h2>
       <div className="mb-3 grid grid-cols-4 gap-2 text-center">
         {cells.map(({ label, value, target }) => (

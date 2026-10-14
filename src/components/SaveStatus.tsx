@@ -40,7 +40,7 @@ export function SaveStatus({ state, onRetry }: SaveStatusProps) {
     <p
       role="status"
       aria-live="polite"
-      className="flex items-center justify-end gap-1 text-xs text-slate-400 dark:text-slate-500"
+      className="flex items-center justify-end gap-1 text-xs text-slate-500 dark:text-slate-400"
     >
       {state.status === 'saving' ? (
         <>

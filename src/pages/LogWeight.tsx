@@ -169,7 +169,7 @@ export default function LogWeight() {
               </p>
             )}
             {profile?.goal_weight_lb != null && (
-              <p className="text-xs text-slate-400 dark:text-slate-500">
+              <p className="text-xs text-slate-500 dark:text-slate-400">
                 Goal: {weightFromLb(profile.goal_weight_lb, units)} {wUnit}
               </p>
             )}
@@ -177,7 +177,7 @@ export default function LogWeight() {
         </div>
       )}
 
-      {error && <p className="mb-3 text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <button type="submit" disabled={saving || loading} className="btn-primary">
         {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}

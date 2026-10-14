@@ -97,10 +97,10 @@ function Stepper({ step }: { step: Step }) {
               <span
                 className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
                   done
-                    ? 'bg-emerald-500 text-white'
+                    ? 'bg-emerald-700 text-white'
                     : current
                       ? 'border-2 border-emerald-500 bg-emerald-500/10 text-emerald-500'
-                      : 'border-2 border-slate-300 text-slate-400 dark:border-slate-700 dark:text-slate-500'
+                      : 'border-2 border-slate-300 text-slate-500 dark:border-slate-700 dark:text-slate-400'
                 }`}
                 aria-current={current ? 'step' : undefined}
               >
@@ -110,7 +110,7 @@ function Stepper({ step }: { step: Step }) {
                 className={`text-center text-xs font-medium ${
                   done || current
                     ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-slate-400 dark:text-slate-500'
+                    : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 {STEP_LABELS[n]}
@@ -260,7 +260,7 @@ export default function SetupWizard() {
       await savePreferredUnits(user.id, units);
       // Navigate only after the profile actually saved; a failure keeps the
       // user (and their entered values) on the wizard with a retryable error.
-      navigate('/log');
+      navigate('/macros');
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Failed to save profile');
     } finally {
@@ -274,7 +274,7 @@ export default function SetupWizard() {
 
   function fieldError(field: keyof SetupData) {
     const message = errors[field];
-    return message ? <p className="mt-1 text-sm text-red-500">{message}</p> : null;
+    return message ? <p role="alert" className="mt-1 text-sm text-red-600 dark:text-red-400">{message}</p> : null;
   }
 
   return (
@@ -510,7 +510,7 @@ export default function SetupWizard() {
             </div>
 
             {saveError && (
-              <p role="alert" className="text-sm text-red-500">
+              <p role="alert" className="text-sm text-red-600 dark:text-red-400">
                 Couldn&apos;t save your profile: {saveError}. Your answers are still here — tap
                 &ldquo;Start first log&rdquo; to try again.
               </p>

@@ -302,7 +302,7 @@ export default function MacroTrackerPage() {
         </button>
       </div>
 
-      {pageError && <p className="mb-3 text-sm text-red-500">{pageError}</p>}
+      {pageError && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{pageError}</p>}
 
       {loading || mealsLoading ? (
         <div className="flex justify-center py-10">

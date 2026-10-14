@@ -83,7 +83,7 @@ export function WorkoutTracker({
   if (exercises.length === 0 && cardioExercises.length === 0) {
     return (
       <div className="card flex flex-col items-center gap-2 py-8 text-center">
-        <Dumbbell className="h-8 w-8 text-slate-400 dark:text-slate-500" aria-hidden />
+        <Dumbbell className="h-8 w-8 text-slate-500 dark:text-slate-400" aria-hidden />
         <p className="text-sm text-slate-500 dark:text-slate-400">
           No exercises yet. Add strength or cardio above to get started.
         </p>
@@ -163,7 +163,7 @@ export function WorkoutTracker({
                     type="button"
                     onClick={() => toggleExpanded(key)}
                     aria-label={`Collapse ${we.exercise.name}`}
-                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
+                    className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700/60 dark:hover:text-slate-200"
                   >
                     <ChevronDown className="h-4 w-4 rotate-180" aria-hidden />
                   </button>
@@ -172,7 +172,7 @@ export function WorkoutTracker({
                   type="button"
                   onClick={() => onRemoveExercise(exIdx)}
                   aria-label={`Remove ${we.exercise.name}`}
-                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-lg text-slate-500 transition dark:text-slate-400-colors hover:bg-red-500/10 hover:text-red-500"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden />
                 </button>
@@ -248,7 +248,7 @@ export function WorkoutTracker({
                   const set = we.sets[nextSetIdx];
                   onLogSet(exIdx, nextSetIdx, set.reps, set.weight, set.rir);
                 }}
-                className="mt-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 active:bg-emerald-700"
+                className="mt-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-800 active:bg-emerald-900"
               >
                 <Check className="h-4 w-4" aria-hidden />
                 Complete set {nextSetIdx + 1}
@@ -279,7 +279,7 @@ export function WorkoutTracker({
                 type="button"
                 onClick={() => onRemoveCardioExercise(cardioIdx)}
                 aria-label={`Remove ${cardioExercise.equipment.name}`}
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                className="rounded-lg p-1.5 text-slate-500 transition dark:text-slate-400-colors hover:bg-red-500/10 hover:text-red-500"
               >
                 <Trash2 className="h-4 w-4" aria-hidden />
               </button>

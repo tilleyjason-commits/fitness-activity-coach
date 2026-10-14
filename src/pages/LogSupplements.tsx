@@ -84,7 +84,7 @@ export default function LogSupplements() {
         </div>
       ) : listError || day.error ? (
         <div className="card">
-          <p className="mb-3 text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">
             {listError ?? day.error}
           </p>
           <button
@@ -155,7 +155,7 @@ export default function LogSupplements() {
       <p
         role="status"
         aria-live="polite"
-        className="flex items-center justify-end gap-1 text-xs text-slate-400 dark:text-slate-500"
+        className="flex items-center justify-end gap-1 text-xs text-slate-500 dark:text-slate-400"
       >
         {announce && (
           <>
