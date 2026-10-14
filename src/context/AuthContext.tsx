@@ -15,6 +15,8 @@ interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  /** True when the first session lookup is taking unusually long (still loading, NOT signed out). */
+  stalled: boolean;
   /** Returns an error message on failure, null on success. */
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string) => Promise<string | null>;
@@ -26,14 +28,17 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    // Safety net: if auth doesn't resolve in 3s (iOS Safari issue), release the spinner
+    // If the first session lookup is slow (iOS Safari storage-lock hang), do NOT
+    // pretend the user is signed out: that bounced valid sessions to /login.
+    // Keep loading and flag it so the shell can offer retry / sign-in.
     const fallback = setTimeout(() => {
       if (active) {
-        setLoading(false);
+        setStalled(true);
       }
     }, 3000);
 
@@ -43,11 +48,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!active) return;
         setSession(data.session);
         setLoading(false);
+        setStalled(false);
         clearTimeout(fallback);
       })
       .catch(() => {
+        // getSession rejected: there is no readable session, so this one is a
+        // real "signed out" answer, not a slow one.
         if (active) {
           setLoading(false);
+          setStalled(false);
           clearTimeout(fallback);
         }
       });
@@ -58,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // in-memory workout state.
       setSession((previous) => stabilizeSession(previous, next));
       setLoading(false);
+      setStalled(false);
       clearTimeout(fallback);
     });
 
@@ -90,11 +100,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       session,
       loading,
+      stalled,
       signIn,
       signUp,
       signOut,
     }),
-    [session, loading, signIn, signUp, signOut],
+    [session, loading, stalled, signIn, signUp, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

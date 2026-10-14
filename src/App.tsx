@@ -4,6 +4,7 @@ import { useAuth } from '~/context/AuthContext';
 import { NavBar } from '~/components/NavBar';
 import { ReminderScheduler } from '~/components/ReminderScheduler';
 import { getProfile } from '~/lib/db';
+import { resolveProfileGate, type ProfileGateOutcome } from '~/lib/profile-gate';
 import { lazy, Suspense, useEffect, useState } from 'react';
 
 const Login = lazy(() => import('~/pages/Login'));
@@ -23,21 +24,50 @@ const Settings = lazy(() => import('~/pages/Settings'));
 const ManageSupplements = lazy(() => import('~/pages/ManageSupplements'));
 const SetupWizard = lazy(() => import('~/pages/SetupWizard'));
 
-function LoadingScreen() {
+function LoadingScreen({ stalled = false }: { stalled?: boolean }) {
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
       <Loader2 className="h-8 w-8 animate-spin text-emerald-500" aria-label="Loading" />
+      {stalled && (
+        <div role="status" className="space-y-3">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Still connecting. Your session is not lost.
+          </p>
+          <div className="flex justify-center gap-3">
+            <button type="button" className="btn-primary" onClick={() => window.location.reload()}>
+              Try again
+            </button>
+            <a href="#/login" className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 dark:border-slate-600 dark:text-slate-200">
+              Sign in again
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProfileLoadError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
+      <p role="alert" className="text-sm text-slate-700 dark:text-slate-200">
+        We could not load your profile. Check your connection and try again.
+      </p>
+      <button type="button" className="btn-primary" onClick={onRetry}>
+        Try again
+      </button>
     </div>
   );
 }
 
 /** Redirects unauthenticated visitors to /login; redirects new users to /setup. */
 function AuthGuard() {
-  const { user, loading } = useAuth();
+  const { user, loading, stalled } = useAuth();
   const [profileState, setProfileState] = useState<{
     userId: string;
-    ready: boolean;
+    outcome: ProfileGateOutcome;
   } | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!user || loading) return;
@@ -48,30 +78,43 @@ function AuthGuard() {
     getProfile(user.id)
       .then((p) => {
         if (!active) return;
-        // Profile exists if any meaningful field was ever set (age/height from wizard,
-        // or weight/bodyfat from old Settings page). If all null, it's a brand-new user
-        // who needs the setup wizard.
-        const hasData = p !== null && (
-          p.age !== null || p.height_cm !== null ||
-          p.weight_lb !== null || p.bodyfat_pct !== null
-        );
-        setProfileState({ userId: user.id, ready: hasData });
+        setProfileState({
+          userId: user.id,
+          outcome: resolveProfileGate(user.id, { ok: true, profile: p }),
+        });
       })
       .catch(() => {
-        if (active) setProfileState({ userId: user.id, ready: true });
-      }); // fail open — a network error should not trap an existing user
+        // A user who is known to have finished setup keeps working offline;
+        // anyone else sees a retry screen (never the app, never skipped onboarding).
+        if (active) {
+          setProfileState({
+            userId: user.id,
+            outcome: resolveProfileGate(user.id, { ok: false }),
+          });
+        }
+      });
     return () => {
       active = false;
     };
-  }, [user, loading]);
+  }, [user, loading, attempt]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LoadingScreen stalled={stalled} />;
   if (!user) return <Navigate to="/login" replace />;
   // Do not redirect to setup until this specific user's profile lookup settles.
   // The old boolean initialized false and redirected every existing user to
   // /setup before the async lookup could complete.
   if (profileState === null || profileState.userId !== user.id) return <LoadingScreen />;
-  if (!profileState.ready) return <Navigate to="/setup" replace />;
+  if (profileState.outcome === 'error') {
+    return (
+      <ProfileLoadError
+        onRetry={() => {
+          setProfileState(null);
+          setAttempt((n) => n + 1);
+        }}
+      />
+    );
+  }
+  if (profileState.outcome === 'needs-setup') return <Navigate to="/setup" replace />;
 
   // Phone: single column with the tab bar fixed to the bottom. Desktop (md+):
   // the same column, centred beside a sticky nav rail.

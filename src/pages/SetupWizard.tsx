@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Check, Dumbbell, Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
-import { savePreferredUnits, upsertProfile } from '~/lib/db';
+import { getProfile, savePreferredUnits, upsertProfile } from '~/lib/db';
+import { isProfileComplete } from '~/lib/profile-gate';
 import {
   convertTyped,
   heightToCm,
@@ -156,6 +157,26 @@ export default function SetupWizard() {
   const [errors, setErrors] = useState<Partial<Record<keyof SetupData, string>>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [alreadySetUp, setAlreadySetUp] = useState(false);
+
+  // A finished profile must not be overwritten by revisiting /setup.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    getProfile(user.id)
+      .then((p) => {
+        if (active && isProfileComplete(p)) setAlreadySetUp(true);
+      })
+      .catch(() => {
+        // Lookup failed: stay on the wizard; saving it again is the user's explicit choice.
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  if (alreadySetUp && !saving) return <Navigate to="/" replace />;
 
   if (loading) {
     return (

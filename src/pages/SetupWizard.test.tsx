@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import SetupWizard from '~/pages/SetupWizard';
 
 /**
@@ -12,6 +12,7 @@ import SetupWizard from '~/pages/SetupWizard';
  */
 
 const navigateMock = vi.fn();
+
 vi.mock('react-router-dom', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react-router-dom')>();
   return { ...actual, useNavigate: () => navigateMock };
@@ -19,7 +20,9 @@ vi.mock('react-router-dom', async (importOriginal) => {
 
 const upsertProfileMock = vi.fn();
 const savePreferredUnitsMock = vi.fn();
+const getProfileMock = vi.fn();
 vi.mock('~/lib/db', () => ({
+  getProfile: (...args: unknown[]) => getProfileMock(...args),
   upsertProfile: (...args: unknown[]) => upsertProfileMock(...args),
   savePreferredUnits: (...args: unknown[]) => savePreferredUnitsMock(...args),
 }));
@@ -59,6 +62,7 @@ async function fillWizardToFinish() {
 describe('SetupWizard training_time mapping', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getProfileMock.mockResolvedValue(null);
     savePreferredUnitsMock.mockResolvedValue(undefined);
   });
 
@@ -101,6 +105,7 @@ describe('SetupWizard training_time mapping', () => {
 describe('SetupWizard save behavior', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getProfileMock.mockResolvedValue(null);
     savePreferredUnitsMock.mockResolvedValue(undefined);
   });
 
@@ -147,6 +152,7 @@ describe('SetupWizard save behavior', () => {
 describe('SetupWizard unit toggle', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getProfileMock.mockResolvedValue(null);
     savePreferredUnitsMock.mockResolvedValue(undefined);
   });
 
@@ -187,5 +193,20 @@ describe('SetupWizard unit toggle', () => {
     expect(payload.height_cm).toBe(182.9);
     expect(payload.weight_lb).toBe(200);
     expect(savePreferredUnitsMock).toHaveBeenCalledWith('user-abc', 'metric');
+  });
+});
+
+describe('SetupWizard on an already-complete profile', () => {
+  it('redirects home instead of letting the profile be overwritten', async () => {
+    getProfileMock.mockResolvedValue({ id: 'user-abc', user_id: 'user-abc', age: 40, height_cm: 182.9 });
+    render(
+      <MemoryRouter initialEntries={['/setup']}>
+        <Routes>
+          <Route path="/setup" element={<SetupWizard />} />
+          <Route path="/" element={<p>home screen</p>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText('home screen')).toBeInTheDocument();
   });
 });
