@@ -1,8 +1,8 @@
 /**
  * Offline-first queue for meal saves (save_meal RPC). Mirrors
  * workout-offline-queue.ts / daily-log-offline-queue.ts: namespaced per
- * user id, mismatched entries quarantined instead of replayed, quarantined
- * (not deleted) on sign-out.
+ * user id, mismatched entries quarantined instead of replayed. Left in place on
+ * sign-out (the per-user key already isolates accounts).
  *
  * Meals are keyed by (date, slot) — a later offline edit to the same slot
  * replaces the earlier queued one, matching what save_meal itself does
@@ -120,6 +120,29 @@ export function clearMealSaveQueue(userId: string): void {
   writeQueue(userId, []);
 }
 
+/** Drop the queued save for one date + slot (live save succeeded, or the meal was cleared). */
+export function dequeueMealSave(userId: string, date: string, slot: MealSlot): void {
+  const queue = readQueue(userId);
+  const next = queue.filter((item) => !(item.date === date && item.slot === slot));
+  if (next.length !== queue.length) writeQueue(userId, next);
+}
+
+function removeById(userId: string, id: string): void {
+  writeQueue(
+    userId,
+    readQueue(userId).filter((item) => item.id !== id),
+  );
+}
+
+function recordFailure(userId: string, id: string, lastError: string): void {
+  writeQueue(
+    userId,
+    readQueue(userId).map((item) =>
+      item.id === id ? { ...item, attempts: item.attempts + 1, lastError } : item,
+    ),
+  );
+}
+
 /**
  * Attempt every pending save. `ensureDailyLogId` resolves (creating if
  * necessary) the daily_logs row id for a queued item's date — the queue may
@@ -138,23 +161,26 @@ export async function flushMealSaveQueue(
   if (mismatched.length > 0) quarantine(mismatched);
 
   const owned = queue.filter((item) => item.userId === userId);
-  const remaining: QueuedMealSave[] = [];
   let flushed = 0;
   let lastError: string | null = null;
 
   for (const item of owned) {
+    // Skip anything a live save or a meal clear dequeued while we were busy.
+    if (!readQueue(userId).some((current) => current.id === item.id)) continue;
     try {
       const dailyLogId = await ensureDailyLogId(item.date);
+      // Re-check after the await: the user may have cleared the slot meanwhile.
+      if (!readQueue(userId).some((current) => current.id === item.id)) continue;
       await save(dailyLogId, item.slot, item.input);
       flushed += 1;
+      removeById(userId, item.id);
     } catch (error) {
       lastError = error instanceof Error ? error.message : 'Offline sync failed';
-      remaining.push({ ...item, attempts: item.attempts + 1, lastError });
+      recordFailure(userId, item.id, lastError);
     }
   }
 
-  writeQueue(userId, remaining);
-  return { flushed, remaining: remaining.length, lastError };
+  return { flushed, remaining: readQueue(userId).length, lastError };
 }
 
 /**
@@ -172,6 +198,7 @@ export async function saveMealWithOfflineQueue(
   try {
     const dailyLogId = await ensureDailyLogId(date);
     await save(dailyLogId, slot, input);
+    dequeueMealSave(userId, date, slot);
     if (hasPendingMealSaves(userId)) {
       void flushMealSaveQueue(userId, ensureDailyLogId, save);
     }

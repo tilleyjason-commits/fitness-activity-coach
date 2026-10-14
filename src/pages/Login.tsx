@@ -5,10 +5,10 @@ import { useAuth } from '~/context/AuthContext';
 import { Logo } from '~/components/Logo';
 import { isSupabaseConfigured } from '~/lib/supabase';
 
-type Mode = 'signin' | 'signup';
+type Mode = 'signin' | 'signup' | 'forgot';
 
 export default function Login() {
-  const { user, loading, signIn, signUp } = useAuth();
+  const { user, loading, signIn, signUp, resetPassword } = useAuth();
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,7 +24,15 @@ export default function Login() {
     setNotice(null);
     setSubmitting(true);
     try {
-      if (mode === 'signin') {
+      if (mode === 'forgot') {
+        const message = await resetPassword(email);
+        if (message) {
+          setError(message);
+        } else {
+          // Same wording whether or not the address has an account.
+          setNotice('If an account exists for that email, a reset link is on its way.');
+        }
+      } else if (mode === 'signin') {
         const message = await signIn(email, password);
         if (message) setError(message);
       } else {
@@ -80,6 +88,7 @@ export default function Login() {
             placeholder="you@example.com"
           />
         </div>
+        {mode !== 'forgot' && (
         <div>
           <label htmlFor="password" className="label">
             Password
@@ -96,26 +105,45 @@ export default function Login() {
             placeholder="••••••••"
           />
         </div>
+        )}
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && (
+          <p role="alert" className="text-sm text-red-500">
+            {error}
+          </p>
+        )}
         {notice && <p className="text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}
 
         <button type="submit" disabled={submitting} className="btn-primary">
           {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-          {mode === 'signin' ? 'Sign in' : 'Create account'}
+          {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
         </button>
       </form>
+
+      {mode === 'signin' && (
+        <button
+          type="button"
+          onClick={() => {
+            setMode('forgot');
+            setError(null);
+            setNotice(null);
+          }}
+          className="mt-4 text-center text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+        >
+          Forgot your password?
+        </button>
+      )}
 
       <button
         type="button"
         onClick={() => {
-          setMode(mode === 'signin' ? 'signup' : 'signin');
+          setMode(mode === 'signup' || mode === 'forgot' ? 'signin' : 'signup');
           setError(null);
           setNotice(null);
         }}
         className="mt-4 text-center text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
       >
-        {mode === 'signin' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+        {mode === 'signin' ? 'New here? Create an account' : mode === 'signup' ? 'Already have an account? Sign in' : 'Back to sign in'}
       </button>
     </div>
   );

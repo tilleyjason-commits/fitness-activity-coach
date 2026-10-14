@@ -14,6 +14,8 @@ vi.mock('~/context/AuthContext', () => ({
 
 vi.mock('~/lib/db', () => ({
   getProfile: () => Promise.resolve(null),
+  getPreferredUnits: () => Promise.resolve('us'),
+  savePreferredUnits: vi.fn(),
   upsertProfile: vi.fn(),
 }));
 

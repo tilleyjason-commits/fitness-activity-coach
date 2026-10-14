@@ -1,11 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { Check, Dumbbell, Loader2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
-import { upsertProfile } from '~/lib/db';
+import { getProfile, savePreferredUnits, upsertProfile } from '~/lib/db';
+import { isProfileComplete } from '~/lib/profile-gate';
+import {
+  convertTyped,
+  heightToCm,
+  heightUnitLabel,
+  weightToLb,
+  weightUnitLabel,
+  type UnitSystem,
+} from '~/lib/units';
 
 type Step = 1 | 2 | 3;
-type UnitSystem = 'us' | 'metric';
 
 /** Raw input strings for every wizard field; converted to numbers on submit. */
 interface SetupData {
@@ -53,32 +61,19 @@ function toNum(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
 }
 
-function inchesToCm(inches: number): number {
-  return Math.round(inches * 2.54 * 10) / 10;
-}
-
-function kgToLb(kg: number): number {
-  return Math.round(kg * 2.2046226218 * 10) / 10;
-}
-
-function displayHeightUnit(units: UnitSystem): string {
-  return units === 'us' ? 'in' : 'cm';
-}
-
-function displayWeightUnit(units: UnitSystem): string {
-  return units === 'us' ? 'lb' : 'kg';
-}
+const displayHeightUnit = heightUnitLabel;
+const displayWeightUnit = weightUnitLabel;
 
 function toProfileHeightCm(value: string, units: UnitSystem): number | null {
   const n = toNum(value);
   if (n === null || Number.isNaN(n)) return n;
-  return units === 'us' ? inchesToCm(n) : n;
+  return heightToCm(n, units);
 }
 
 function toProfileWeightLb(value: string, units: UnitSystem): number | null {
   const n = toNum(value);
   if (n === null || Number.isNaN(n)) return n;
-  return units === 'us' ? n : kgToLb(n);
+  return weightToLb(n, units);
 }
 
 function Stepper({ step }: { step: Step }) {
@@ -163,6 +158,26 @@ export default function SetupWizard() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [alreadySetUp, setAlreadySetUp] = useState(false);
+
+  // A finished profile must not be overwritten by revisiting /setup.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    getProfile(user.id)
+      .then((p) => {
+        if (active && isProfileComplete(p)) setAlreadySetUp(true);
+      })
+      .catch(() => {
+        // Lookup failed: stay on the wizard; saving it again is the user's explicit choice.
+      });
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  if (alreadySetUp && !saving) return <Navigate to="/" replace />;
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -207,6 +222,19 @@ export default function SetupWizard() {
     return Object.values(next).every((v) => !v);
   }
 
+  /** Re-express anything already typed in the new system so the digits are never reinterpreted. */
+  function handleUnitsChange(next: UnitSystem) {
+    if (next === units) return;
+    setData((prev) => ({
+      ...prev,
+      height_cm: convertTyped(prev.height_cm, 'height', units, next),
+      weight_lb: convertTyped(prev.weight_lb, 'weight', units, next),
+      goal_weight_lb: convertTyped(prev.goal_weight_lb, 'weight', units, next),
+    }));
+    setErrors({});
+    setUnits(next);
+  }
+
   function handleContinue() {
     if (step === 1 && validateStep1()) setStep(2);
     else if (step === 2 && validateStep2()) setStep(3);
@@ -229,6 +257,7 @@ export default function SetupWizard() {
         training_years: toNum(data.training_years),
         training_time: trainingTimeToHHMM(data.training_time),
       });
+      await savePreferredUnits(user.id, units);
       // Navigate only after the profile actually saved; a failure keeps the
       // user (and their entered values) on the wizard with a retryable error.
       navigate('/log');
@@ -276,7 +305,7 @@ export default function SetupWizard() {
             <button
               key={option.value}
               type="button"
-              onClick={() => setUnits(option.value as UnitSystem)}
+              onClick={() => handleUnitsChange(option.value as UnitSystem)}
               aria-pressed={units === option.value}
               className={`rounded-xl border px-3 py-2 text-left transition-colors ${
                 units === option.value

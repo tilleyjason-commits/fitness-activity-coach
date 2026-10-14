@@ -4,7 +4,17 @@ import { format, parseISO } from 'date-fns';
 import { CalendarDays, Loader2, Scale } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
 import { useDailyLog } from '~/hooks/useDailyLog';
-import { getProfile, getRecentWeighIns } from '~/lib/db';
+import { getPreferredUnits, getProfile, getRecentWeighIns } from '~/lib/db';
+import {
+  waistFromInches,
+  waistToInches,
+  waistUnitLabel,
+  weightFromLb,
+  weightToLb,
+  weightUnitLabel,
+  round1,
+  type UnitSystem,
+} from '~/lib/units';
 import type { DailyLog, Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
 
@@ -23,6 +33,7 @@ export default function LogWeight() {
   const [date, setDate] = useState(today);
   const { log, loading, saving, error, save } = useDailyLog(date);
 
+  const [units, setUnits] = useState<UnitSystem>('us');
   const [weight, setWeight] = useState('');
   const [waist, setWaist] = useState('');
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -32,6 +43,9 @@ export default function LogWeight() {
 
   useEffect(() => {
     if (!user) return;
+    getPreferredUnits(user.id)
+      .then(setUnits)
+      .catch(() => setUnits('us'));
     getProfile(user.id)
       .then(setProfile)
       .catch(() => setProfile(null));
@@ -48,21 +62,25 @@ export default function LogWeight() {
       setWaist('');
       return;
     }
-    setWeight(toStr(log.weekly_weight_lb));
-    setWaist(toStr(log.weekly_waist_inches));
-  }, [log]);
+    // Stored as lb / inches; shown in the user's own units.
+    setWeight(toStr(log.weekly_weight_lb === null ? null : weightFromLb(log.weekly_weight_lb, units)));
+    setWaist(
+      toStr(log.weekly_waist_inches === null ? null : waistFromInches(log.weekly_waist_inches, units)),
+    );
+  }, [log, units]);
 
   const weightValue = toNum(weight);
   const delta =
     weightValue !== null && previous?.weekly_weight_lb != null
-      ? Math.round((weightValue - previous.weekly_weight_lb) * 10) / 10
+      ? round1(weightValue - weightFromLb(previous.weekly_weight_lb, units))
       : null;
+  const wUnit = weightUnitLabel(units);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const patch: Partial<DailyLog> = {
-      weekly_weight_lb: weightValue,
-      weekly_waist_inches: toNum(waist),
+      weekly_weight_lb: weightValue === null ? null : weightToLb(weightValue, units),
+      weekly_waist_inches: toNum(waist) === null ? null : waistToInches(Number(waist), units),
     };
     const saved = await save(patch);
     if (saved) navigate('/');
@@ -99,7 +117,7 @@ export default function LogWeight() {
       <div className="card mb-4 space-y-4">
         <div>
           <label htmlFor="weight" className="label">
-            Weight (lb)
+            Weight ({wUnit})
           </label>
           <input
             id="weight"
@@ -109,13 +127,13 @@ export default function LogWeight() {
             step="0.1"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
-            placeholder="e.g. 212.4"
+            placeholder={units === 'us' ? 'e.g. 212.4' : 'e.g. 96.3'}
             className="field"
           />
         </div>
         <div>
           <label htmlFor="waist" className="label">
-            Waist (inches)
+            Waist ({waistUnitLabel(units)})
           </label>
           <input
             id="waist"
@@ -125,7 +143,7 @@ export default function LogWeight() {
             step="0.1"
             value={waist}
             onChange={(e) => setWaist(e.target.value)}
-            placeholder="e.g. 36.5"
+            placeholder={units === 'us' ? 'e.g. 36.5' : 'e.g. 92.7'}
             className="field"
           />
         </div>
@@ -137,19 +155,22 @@ export default function LogWeight() {
           <div className="text-sm text-slate-600 dark:text-slate-300">
             {previous?.weekly_weight_lb != null && (
               <p>
-                Last weigh-in: <strong>{previous.weekly_weight_lb} lb</strong>
+                Last weigh-in:{' '}
+                <strong>
+                  {weightFromLb(previous.weekly_weight_lb, units)} {wUnit}
+                </strong>
                 {delta !== null && (
                   <span className={delta <= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
                     {' '}
                     ({delta > 0 ? '+' : ''}
-                    {delta} lb)
+                    {delta} {wUnit})
                   </span>
                 )}
               </p>
             )}
             {profile?.goal_weight_lb != null && (
               <p className="text-xs text-slate-400 dark:text-slate-500">
-                Goal: {profile.goal_weight_lb} lb
+                Goal: {weightFromLb(profile.goal_weight_lb, units)} {wUnit}
               </p>
             )}
           </div>

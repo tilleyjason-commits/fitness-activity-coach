@@ -2,7 +2,17 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Bell, ChevronRight, Loader2, LogOut, Moon, Pill, UserRound } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
-import { getProfile, upsertProfile } from '~/lib/db';
+import { getPreferredUnits, getProfile, savePreferredUnits, upsertProfile } from '~/lib/db';
+import {
+  convertTyped,
+  heightFromCm,
+  heightToCm,
+  heightUnitLabel,
+  weightFromLb,
+  weightToLb,
+  weightUnitLabel,
+  type UnitSystem,
+} from '~/lib/units';
 import {
   DEFAULT_REMINDER_PREFS,
   getNotificationPermission,
@@ -33,6 +43,11 @@ function toNum(value: string): number | null {
   return value.trim() === '' ? null : Number(value);
 }
 
+function toCanonical(value: string, convert: (n: number) => number): number | null {
+  const n = toNum(value);
+  return n === null || Number.isNaN(n) ? n : convert(n);
+}
+
 export default function Settings() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -42,6 +57,7 @@ export default function Settings() {
   const [reminderPrefs, setReminderPrefs] = useState<ReminderPrefs>(DEFAULT_REMINDER_PREFS);
   const [reminderError, setReminderError] = useState<string | null>(null);
 
+  const [units, setUnits] = useState<UnitSystem>('us');
   const [age, setAge] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
@@ -57,15 +73,19 @@ export default function Settings() {
   useEffect(() => {
     if (!user) return;
     let active = true;
-    getProfile(user.id)
-      .then((data) => {
+    Promise.all([getProfile(user.id), getPreferredUnits(user.id)])
+      .then(([data, preferred]) => {
         if (!active) return;
         setProfile(data);
+        setUnits(preferred);
+        // The database stores cm and lb; show them in the user's own units.
         setAge(toStr(data?.age));
-        setHeight(toStr(data?.height_cm));
-        setWeight(toStr(data?.weight_lb));
+        setHeight(toStr(data?.height_cm == null ? null : heightFromCm(data.height_cm, preferred)));
+        setWeight(toStr(data?.weight_lb == null ? null : weightFromLb(data.weight_lb, preferred)));
         setBodyfat(toStr(data?.bodyfat_pct));
-        setGoalWeight(toStr(data?.goal_weight_lb));
+        setGoalWeight(
+          toStr(data?.goal_weight_lb == null ? null : weightFromLb(data.goal_weight_lb, preferred)),
+        );
         setGoalBodyfat(toStr(data?.goal_bodyfat_pct));
         setTrainingYears(toStr(data?.training_years));
         setTrainingTime((data?.training_time ?? '11:00').slice(0, 5));
@@ -130,6 +150,14 @@ export default function Settings() {
     applyTheme(next);
   }
 
+  function handleUnitsChange(next: UnitSystem) {
+    if (next === units) return;
+    setHeight((v) => convertTyped(v, 'height', units, next));
+    setWeight((v) => convertTyped(v, 'weight', units, next));
+    setGoalWeight((v) => convertTyped(v, 'weight', units, next));
+    setUnits(next);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!user) return;
@@ -141,14 +169,15 @@ export default function Settings() {
         id: user.id,
         user_id: user.id,
         age: toNum(age),
-        height_cm: toNum(height),
-        weight_lb: toNum(weight),
+        height_cm: toCanonical(height, (n) => heightToCm(n, units)),
+        weight_lb: toCanonical(weight, (n) => weightToLb(n, units)),
         bodyfat_pct: toNum(bodyfat),
         goal_bodyfat_pct: toNum(goalBodyfat),
-        goal_weight_lb: toNum(goalWeight),
+        goal_weight_lb: toCanonical(goalWeight, (n) => weightToLb(n, units)),
         training_years: toNum(trainingYears),
         training_time: trainingTime.trim() === '' ? null : trainingTime,
       });
+      await savePreferredUnits(user.id, units);
       setProfile(updated);
       setSaved(true);
     } catch (e) {
@@ -247,6 +276,29 @@ export default function Settings() {
           Targets, meal timing, and coaching rules use these values.
         </p>
         <div className="card">
+          <div className="mb-4" role="group" aria-label="Preferred units">
+            <p className="label">Units</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { value: 'us', label: 'US (in, lb)' },
+                { value: 'metric', label: 'Metric (cm, kg)' },
+              ] as const).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleUnitsChange(option.value)}
+                  aria-pressed={units === option.value}
+                  className={`rounded-xl border px-3 py-2 text-sm transition-colors ${
+                    units === option.value
+                      ? 'border-slate-900 bg-slate-900 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900'
+                      : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="mb-4 grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="settings-age" className="label">
@@ -263,7 +315,7 @@ export default function Settings() {
           </div>
           <div>
             <label htmlFor="settings-height" className="label">
-              Height (cm)
+              Height ({heightUnitLabel(units)})
             </label>
             <input
               id="settings-height"
@@ -277,7 +329,7 @@ export default function Settings() {
           </div>
           <div>
             <label htmlFor="settings-weight" className="label">
-              Weight (lb)
+              Weight ({weightUnitLabel(units)})
             </label>
             <input
               id="settings-weight"
@@ -306,7 +358,7 @@ export default function Settings() {
           </div>
           <div>
             <label htmlFor="settings-goal-weight" className="label">
-              Goal weight (lb)
+              Goal weight ({weightUnitLabel(units)})
             </label>
             <input
               id="settings-goal-weight"
