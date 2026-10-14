@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { describeFunctionsInvokeError } from './macro-errors';
+import { storedFromUnits, unitsFromStored, type UnitSystem } from './units';
 import type { RuleResult } from './evaluate';
 import type {
   DailyLog,
@@ -457,4 +458,27 @@ export async function upsertWeeklySummary(summary: WeeklySummaryInsert): Promise
     .single();
   if (error) throw new Error(error.message);
   return data as WeeklySummary;
+}
+
+/** Preferred unit system (stored as 'lb' | 'kg' in user_settings). Defaults to US. */
+export async function getPreferredUnits(userId: string): Promise<UnitSystem> {
+  const { data, error } = await supabase
+    .from('user_settings')
+    .select('preferred_units')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return unitsFromStored((data as { preferred_units: string } | null)?.preferred_units);
+}
+
+export async function savePreferredUnits(userId: string, units: UnitSystem): Promise<void> {
+  const { error } = await supabase.from('user_settings').upsert(
+    {
+      user_id: userId,
+      preferred_units: storedFromUnits(units),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'user_id' },
+  );
+  if (error) throw new Error(error.message);
 }
