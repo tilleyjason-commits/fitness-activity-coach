@@ -26,6 +26,8 @@ import {
 import { applyTheme, getStoredTheme, type Theme } from '~/lib/theme';
 import type { Profile } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
+import { downloadTrainingCsv } from '~/components/ProgressSurfaces';
+import { deleteOwnAccount } from '~/lib/plan-repo';
 import { ToggleRow } from '~/components/ToggleRow';
 
 const REMINDER_CATEGORY_LABELS: Record<ReminderCategory, string> = {
@@ -69,6 +71,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [accountError, setAccountError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -422,6 +426,44 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      <section className="card mb-4" aria-label="Data controls">
+        <h2 className="section-title">Your data</h2>
+        <button
+          type="button"
+          className="btn-primary mb-3"
+          onClick={() => {
+            if (!user) return;
+            void downloadTrainingCsv(user.id).catch((e: unknown) =>
+              setAccountError(e instanceof Error ? e.message : 'Export failed'),
+            );
+          }}
+        >
+          Export CSV
+        </button>
+        <label className="label" htmlFor="delete-account">
+          Type DELETE to remove the account
+        </label>
+        <input
+          id="delete-account"
+          className="field mb-2"
+          value={deleteConfirm}
+          onChange={(e) => setDeleteConfirm(e.target.value)}
+        />
+        {accountError && <p role="alert" className="mb-2 text-sm text-red-600 dark:text-red-400">{accountError}</p>}
+        <button
+          type="button"
+          disabled={deleteConfirm !== 'DELETE'}
+          className="w-full rounded-xl border border-red-300 py-3 text-sm font-semibold text-red-600 disabled:opacity-50 dark:border-red-500/40 dark:text-red-400"
+          onClick={() => {
+            void deleteOwnAccount()
+              .then(() => signOut())
+              .catch((e: unknown) => setAccountError(e instanceof Error ? e.message : 'Could not delete the account'));
+          }}
+        >
+          Delete account
+        </button>
+      </section>
 
       <button
         type="button"

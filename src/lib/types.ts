@@ -287,6 +287,9 @@ export interface SetRecord {
   weight: number;
   rir: number | null;
   completed: boolean;
+  /** Absent on workouts saved before log types existed. */
+  setType?: 'working' | 'warmup';
+  durationSeconds?: number | null;
 }
 
 export interface WorkoutExercise {
@@ -295,6 +298,10 @@ export interface WorkoutExercise {
   targetSets: number;
   targetReps: number;
   targetWeight: number;
+  logType?: 'weight_reps' | 'reps' | 'duration' | 'reps_duration';
+  notes?: string;
+  restSeconds?: number | null;
+  supersetGroup?: number | null;
 }
 
 export interface CardioEquipment {
@@ -314,6 +321,7 @@ export interface WorkoutState {
   exercises: WorkoutExercise[];
   cardioExercises: CardioWorkoutExercise[];
   date: string;
+  startedAt?: string | null;
 }
 
 export interface WorkoutHistoryEntry extends WorkoutState {
@@ -384,6 +392,10 @@ export interface WorkoutExerciseRow {
   target_reps: number;
   target_weight: number;
   sort_order: number;
+  log_type?: 'weight_reps' | 'reps' | 'duration' | 'reps_duration' | null;
+  notes?: string | null;
+  rest_seconds?: number | null;
+  superset_group?: number | null;
 }
 
 export interface WorkoutSetRow {
@@ -395,6 +407,8 @@ export interface WorkoutSetRow {
   rir: number | null;
   completed: boolean;
   completed_at: string | null;
+  set_type?: 'working' | 'warmup' | null;
+  duration_seconds?: number | null;
 }
 
 export interface WorkoutCardioRow {

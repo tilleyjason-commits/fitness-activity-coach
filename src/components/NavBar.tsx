@@ -23,7 +23,7 @@ const NAV_ITEMS: NavItem[] = [
     to: '/training',
     label: 'Workout',
     icon: Dumbbell,
-    isActive: (p) => p === '/training' || p === '/routines',
+    isActive: (p) => p === '/training' || p === '/routines' || p === '/plans',
   },
   {
     to: '/log',

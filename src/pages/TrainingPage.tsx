@@ -10,6 +10,7 @@ import { useAuth } from '~/context/AuthContext';
 import { PageHeader } from '~/components/PageHeader';
 import { TrainingTabs } from '~/components/TrainingTabs';
 import { ExerciseSelector } from '~/components/ExerciseSelector';
+import { FocusWorkout } from '~/components/FocusWorkout';
 import { WorkoutTracker } from '~/components/WorkoutTracker';
 import { WorkoutHistory } from '~/components/WorkoutHistory';
 import { RestTimer } from '~/components/RestTimer';
@@ -48,9 +49,12 @@ import {
   replaceWorkoutWithRoutine,
   routineHasItems,
   setSetRir,
+  suggestNextSet,
   updateSetRecord,
   type PastSet,
 } from '~/lib/workout-mappers';
+import { recordOverloadDecision } from '~/lib/plan-repo';
+import { buildScorecard, formatClock } from '~/lib/training-surface';
 import type {
   CardioEquipment,
   DailyRoutine,
@@ -120,6 +124,12 @@ export default function TrainingPage() {
   const [showSelector, setShowSelector] = useState(false);
 
   const [confirmFinish, setConfirmFinish] = useState(false);
+  const [layout, setLayout] = useState<'list' | 'focus'>('list');
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [exertion, setExertion] = useState(7);
+  const [decisions, setDecisions] = useState<Record<string, 'accept' | 'skip'>>({});
+  const startedAtRef = useRef<string | null>(null);
+  const restSecondsRef = useRef(0);
   const [finishing, setFinishing] = useState(false);
   const finishDialogRef = useRef<HTMLDivElement>(null);
   const closeFinishDialog = useCallback(() => {
@@ -281,6 +291,11 @@ export default function TrainingPage() {
     };
   }, [user, workout]);
 
+  useEffect(() => {
+    if (workout && !startedAtRef.current) startedAtRef.current = new Date().toISOString();
+    if (!workout) startedAtRef.current = null;
+  }, [workout]);
+
   const mutateWorkout = useCallback((updater: (current: WorkoutState) => WorkoutState) => {
     setSaveError(null);
     dirtyRef.current = true;
@@ -348,9 +363,10 @@ export default function TrainingPage() {
         }
       }
       setShowRestTimer(true);
+      restSecondsRef.current += restDefaultSeconds;
       setRestTimerKey((key) => key + 1);
     },
-    [mutateWorkout, workout],
+    [mutateWorkout, restDefaultSeconds, workout],
   );
 
   const changeSetRir = useCallback(
@@ -404,7 +420,24 @@ export default function TrainingPage() {
       autosaveRef.current?.schedule(workout);
       await (autosaveRef.current?.flush() ?? saveWorkoutState(workout));
       await routineAutosaveRef.current?.flush();
-      await completeWorkout(user.id, today);
+      await completeWorkout(user.id, today, {
+        startedAt: startedAtRef.current,
+        restSeconds: restSecondsRef.current,
+        exertion,
+      });
+      await Promise.all(
+        Object.entries(decisions).map(([exerciseId, decision]) => {
+          const suggestion = suggestNextSet(pastByExerciseId[exerciseId]?.[0] ?? null);
+          return recordOverloadDecision({
+            userId: user.id,
+            exerciseId,
+            workoutDate: today,
+            decision,
+            suggestedReps: suggestion?.reps ?? null,
+            suggestedWeight: suggestion?.weight ?? null,
+          });
+        }),
+      ).catch(() => undefined);
       // The workout is final: drop any queued snapshot so a later flush cannot
       // replay stale state and recreate an active workout for this date.
       dequeueWorkoutSave(user.id, today);
@@ -550,6 +583,10 @@ export default function TrainingPage() {
               </div>
             )}
             <SaveStatus state={autosaveState} onRetry={() => autosaveRef.current?.retry()} />
+            <div className="flex gap-2">
+              <button type="button" className="min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>List</button>
+              <button type="button" className="min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={layout === 'focus'} onClick={() => setLayout('focus')}>Focus</button>
+            </div>
           </section>
 
           {saveError && (
@@ -558,6 +595,19 @@ export default function TrainingPage() {
             </p>
           )}
 
+          {layout === 'focus' ? (
+            <FocusWorkout
+              exercises={workout.exercises}
+              index={focusIndex}
+              onIndex={setFocusIndex}
+              onLogSet={logSet}
+              onNote={(exerciseIndex, note) => mutateWorkout((current) => ({
+                ...current,
+                exercises: current.exercises.map((exercise, index) => index === exerciseIndex ? { ...exercise, notes: note } : exercise),
+              }))}
+              pastByExerciseId={pastByExerciseId}
+            />
+          ) : (
           <WorkoutTracker
             exercises={workout.exercises}
             cardioExercises={workout.cardioExercises}
@@ -567,6 +617,7 @@ export default function TrainingPage() {
             onRemoveCardioExercise={removeCardio}
             pastByExerciseId={pastByExerciseId}
           />
+          )}
 
           {hasItems && !showSelector ? (
             <button
@@ -620,6 +671,29 @@ export default function TrainingPage() {
               {totals?.completedSets ?? 0}/{totals?.totalSets ?? 0} sets completed. It will be saved
               to your history and summarized into today's log.
             </p>
+            <div className="mb-4 grid grid-cols-2 gap-2 text-left text-sm">
+              <p>Volume {buildScorecard(workout.exercises.map((exercise) => ({ id: exercise.exercise.id, name: exercise.exercise.name, muscleGroup: exercise.exercise.muscleGroup, sets: exercise.sets })), { startedAt: startedAtRef.current, finishedAt: new Date().toISOString(), restSeconds: restSecondsRef.current, priorBest: Object.fromEntries(Object.entries(pastByExerciseId).map(([id, sets]) => [id, Math.max(...sets.map((set) => set.weight * (1 + set.reps / 30)))])) }).volumeLb} lb</p>
+              <p>Time {formatClock(startedAtRef.current ? Math.round((Date.now() - new Date(startedAtRef.current).getTime()) / 1000) : null)}</p>
+            </div>
+            <label className="mb-3 block text-sm font-semibold">
+              Exertion {exertion}
+              <input className="field" type="range" min={1} max={10} value={exertion} onChange={(e) => setExertion(Number(e.target.value))} />
+            </label>
+            <div className="mb-4 space-y-2 text-left">
+              {workout.exercises.map((exercise) => {
+                const suggestion = suggestNextSet(pastByExerciseId[exercise.exercise.id]?.[0] ?? null);
+                if (!suggestion) return null;
+                return (
+                  <div key={exercise.exercise.id} className="flex items-center justify-between gap-2 text-sm">
+                    <span>{exercise.exercise.name}: {suggestion.reps} × {suggestion.weight}</span>
+                    <span className="flex gap-1">
+                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [exercise.exercise.id]: 'accept' }))}>Accept</button>
+                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [exercise.exercise.id]: 'skip' }))}>Skip</button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
             <div className="flex gap-2">
               <button
                 type="button"

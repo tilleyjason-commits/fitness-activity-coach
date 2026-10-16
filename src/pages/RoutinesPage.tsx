@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { Check, Loader2, Play, RefreshCw, Trash2 } from 'lucide-react';
 import { useAuth } from '~/context/AuthContext';
@@ -144,6 +144,9 @@ export default function RoutinesPage() {
   return (
     <div>
       <PageHeader title="Routines" subtitle="Plan your training week" />
+      <Link to="/plans" className="mb-4 inline-flex min-h-11 items-center text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+        Named plans, weeks, and rest days
+      </Link>
 
       <TrainingTabs active="routines" />
 

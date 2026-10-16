@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Check, Minus, Plus } from 'lucide-react';
+import { ExerciseDetailSheet } from '~/components/ExerciseDetailSheet';
 import {
+  EXERCISES,
   EXERCISE_EQUIPMENT,
   SELECTOR_GROUPS,
   getSelectorItems,
@@ -73,6 +75,7 @@ export function ExerciseSelector({
   const [query, setQuery] = useState('');
   const [equipment, setEquipment] = useState<ExerciseEquipment | ''>('');
   const [selected, setSelected] = useState<Exercise | CardioEquipment | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [sets, setSets] = useState(3);
   const [reps, setReps] = useState(10);
   const [weight, setWeight] = useState(50);
@@ -251,6 +254,11 @@ export function ExerciseSelector({
             </div>
           )}
 
+          {selected && isStrengthExercise(selected) && (
+            <button type="button" className="mb-2 w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold dark:border-slate-600" onClick={() => setDetailOpen(true)}>
+              Details
+            </button>
+          )}
           {selectedAlreadyAdded ? (
             <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3 text-sm font-semibold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
               <Check className="h-4 w-4" />
@@ -263,6 +271,13 @@ export function ExerciseSelector({
             </button>
           )}
         </div>
+      )}
+      {detailOpen && selected && isStrengthExercise(selected) && (
+        <ExerciseDetailSheet
+          exercise={selected}
+          catalog={EXERCISES}
+          onClose={() => setDetailOpen(false)}
+        />
       )}
     </section>
   );
