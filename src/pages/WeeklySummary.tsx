@@ -43,6 +43,7 @@ import {
 import { CHART, resolveTargets } from '~/lib/constants';
 import { SEVERITY_ORDER, type DailyLog, type Profile, type Recommendation } from '~/lib/types';
 import { PageHeader } from '~/components/PageHeader';
+import { ProgressSurfaces } from '~/components/ProgressSurfaces';
 import { RecommendationCard } from '~/components/RecommendationCard';
 import { SkeletonCard } from '~/components/Skeleton';
 import { useIsDark } from '~/hooks/useIsDark';
@@ -121,6 +122,7 @@ export default function WeeklySummary() {
 
   // 0 = the current Monday–Sunday window; positive values page back in time.
   const [weekOffset, setWeekOffset] = useState(0);
+  const [lens, setLens] = useState<'week' | 'calendar' | 'body' | 'strength'>('week');
   const weekStartDate = subDays(startOfWeek(new Date(), { weekStartsOn: 1 }), weekOffset * 7);
   const weekStart = format(weekStartDate, 'yyyy-MM-dd');
   const weekEnd = format(addDays(weekStartDate, 6), 'yyyy-MM-dd');
@@ -418,6 +420,14 @@ export default function WeeklySummary() {
                   dot={{ r: 3 }}
                   activeDot={{ r: 4 }}
                 />
+                {profile?.goal_weight_lb != null && (
+                  <ReferenceLine
+                    y={profile.goal_weight_lb}
+                    stroke={CHART.textMuted}
+                    strokeDasharray="4 4"
+                    label="Goal"
+                  />
+                )}
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -549,10 +559,38 @@ export default function WeeklySummary() {
     </>
   );
 
+  const lensBar = (
+    <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Progress lenses">
+      {(['week', 'calendar', 'body', 'strength'] as const).map((item) => (
+        <button
+          key={item}
+          type="button"
+          role="tab"
+          aria-selected={lens === item}
+          className={`min-h-11 rounded-xl px-3 text-sm font-semibold capitalize ${lens === item ? 'bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900' : 'text-slate-500 dark:text-slate-400'}`}
+          onClick={() => setLens(item)}
+        >
+          {item === 'strength' ? 'Insights' : item}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (!loading && lens !== 'week') {
+    return (
+      <div>
+        <PageHeader title="Progress" />
+        {lensBar}
+        <ProgressSurfaces lens={lens} />
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div>
         <PageHeader title="Progress" />
+        {lensBar}
         {trendZone}
         <h2 className="section-title">Week detail</h2>
         {weekPager}
@@ -567,6 +605,7 @@ export default function WeeklySummary() {
   return (
     <div>
       <PageHeader title="Progress" />
+      {lensBar}
       {trendZone}
 
       <h2 className="section-title">Week detail</h2>

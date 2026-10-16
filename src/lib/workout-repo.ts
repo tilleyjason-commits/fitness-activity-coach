@@ -23,8 +23,9 @@ import type {
 
 const WORKOUT_COLUMNS = 'id, user_id, workout_date, status, created_at, updated_at';
 const EXERCISE_COLUMNS =
-  'id, workout_id, exercise_id, exercise_name, muscle_group, target_sets, target_reps, target_weight, sort_order';
-const SET_COLUMNS = 'id, workout_exercise_id, set_number, reps, weight, rir, completed, completed_at';
+  'id, workout_id, exercise_id, exercise_name, muscle_group, target_sets, target_reps, target_weight, sort_order, log_type, notes, rest_seconds, superset_group';
+const SET_COLUMNS =
+  'id, workout_exercise_id, set_number, reps, weight, rir, completed, completed_at, set_type, duration_seconds';
 const CARDIO_COLUMNS =
   'id, workout_id, equipment_id, equipment_name, equipment_category, duration_minutes, distance_miles, sort_order';
 
@@ -122,21 +123,33 @@ export async function getWorkoutHistory(userId: string): Promise<WorkoutHistoryE
 export async function saveWorkoutState(workout: WorkoutState): Promise<void> {
   const { error } = await supabase.rpc('save_workout', {
     p_workout_date: workout.date,
-    p_exercises: workout.exercises.map((we) => ({
-      exercise_id: we.exercise.id,
-      exercise_name: we.exercise.name,
-      muscle_group: we.exercise.muscleGroup,
-      target_sets: we.targetSets,
-      target_reps: we.targetReps,
-      target_weight: we.targetWeight,
-      sets: we.sets.map((set, setIdx) => ({
-        set_number: setIdx + 1,
-        reps: set.reps,
-        weight: set.weight,
-        rir: set.rir,
-        completed: set.completed,
-      })),
-    })),
+    p_exercises: workout.exercises.map((we) => {
+      const row: Record<string, unknown> = {
+        exercise_id: we.exercise.id,
+        exercise_name: we.exercise.name,
+        muscle_group: we.exercise.muscleGroup,
+        target_sets: we.targetSets,
+        target_reps: we.targetReps,
+        target_weight: we.targetWeight,
+        sets: we.sets.map((set, setIdx) => {
+          const setRow: Record<string, unknown> = {
+            set_number: setIdx + 1,
+            reps: set.reps,
+            weight: set.weight,
+            rir: set.rir,
+            completed: set.completed,
+          };
+          if (set.setType) setRow.set_type = set.setType;
+          if (set.durationSeconds != null) setRow.duration_seconds = set.durationSeconds;
+          return setRow;
+        }),
+      };
+      if (we.logType) row.log_type = we.logType;
+      if (we.notes) row.notes = we.notes;
+      if (we.restSeconds != null) row.rest_seconds = we.restSeconds;
+      if (we.supersetGroup != null) row.superset_group = we.supersetGroup;
+      return row;
+    }),
     p_cardio: workout.cardioExercises.map((ce) => ({
       equipment_id: ce.equipment.id,
       equipment_name: ce.equipment.name,
@@ -161,11 +174,30 @@ export async function hasCompletedWorkout(userId: string, date: string): Promise
   return (count ?? 0) > 0;
 }
 
+export interface SessionFinish {
+  startedAt?: string | null;
+  restSeconds?: number | null;
+  exertion?: number | null;
+  note?: string | null;
+}
+
 /** Mark the date's active workout completed; the DB trigger (migration 006) summarizes it. */
-export async function completeWorkout(userId: string, date: string): Promise<void> {
+export async function completeWorkout(
+  userId: string,
+  date: string,
+  session?: SessionFinish,
+): Promise<void> {
   const { error } = await supabase
     .from('workouts')
-    .update({ status: 'completed', updated_at: new Date().toISOString() })
+    .update({
+      status: 'completed',
+      updated_at: new Date().toISOString(),
+      ...(session?.startedAt ? { started_at: session.startedAt } : {}),
+      ...(session ? { finished_at: new Date().toISOString() } : {}),
+      ...(session?.restSeconds != null ? { rest_seconds: session.restSeconds } : {}),
+      ...(session?.exertion != null ? { exertion: session.exertion } : {}),
+      ...(session?.note ? { session_note: session.note } : {}),
+    })
     .eq('user_id', userId)
     .eq('workout_date', date)
     .eq('status', 'active');

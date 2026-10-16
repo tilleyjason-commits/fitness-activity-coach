@@ -310,10 +310,21 @@ function mapExerciseRows(data: LoadedWorkoutData): WorkoutExercise[] {
     sets: data.sets
       .filter((s) => s.workout_exercise_id === ex.id)
       .sort((a, b) => a.set_number - b.set_number)
-      .map((s) => ({ reps: s.reps, weight: s.weight, rir: s.rir, completed: s.completed })),
+      .map((s) => ({
+        reps: s.reps,
+        weight: s.weight,
+        rir: s.rir,
+        completed: s.completed,
+        ...(s.set_type ? { setType: s.set_type } : {}),
+        ...(s.duration_seconds != null ? { durationSeconds: s.duration_seconds } : {}),
+      })),
     targetSets: ex.target_sets,
     targetReps: ex.target_reps,
     targetWeight: ex.target_weight,
+    ...(ex.log_type ? { logType: ex.log_type } : {}),
+    ...(ex.notes ? { notes: ex.notes } : {}),
+    ...(ex.rest_seconds != null ? { restSeconds: ex.rest_seconds } : {}),
+    ...(ex.superset_group != null ? { supersetGroup: ex.superset_group } : {}),
   }));
 }
 
