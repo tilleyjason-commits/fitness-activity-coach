@@ -1,0 +1,4 @@
+# Node 26's jsdom localStorage breaks the vitest suite (all tests fail).
+# 24.21.0 is installed via mise and passes the full suite. CI stays on Node 22.
+[tools]
+node = "24.21.0"
