@@ -18,7 +18,10 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pinned, not `-latest`: GitHub migrates the `ubuntu-latest` label to a new
+    # image on its own schedule (Ubuntu 26 announced for Oct 2026), which would
+    # change the build toolchain with no code change. Bump this deliberately.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -37,7 +40,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.pull_request.head.repo.full_name == github.repository
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
