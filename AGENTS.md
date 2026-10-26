@@ -121,6 +121,10 @@ not hardcode the Pages path into a Vercel build** — asset URLs 404 at the doma
 connect Git, or let a production deploy run, while `main` still hardcodes the Pages path.
 HashRouter means routes need no SPA rewrite.
 
+CI runners are pinned to `ubuntu-24.04` in both workflows — never `ubuntu-latest`, whose
+underlying image GitHub swaps on its own schedule (Ubuntu 26 from Oct 2026), changing the build
+toolchain with no code change.
+
 Vercel project settings: framework `vite`, build `npm run build`, install `npm ci`, output `dist`,
 Node `22.x`. Manual deploys go through the personal `vercel` wrapper:
 `--scope tilleyjason-9341s-projects --project fitness-coach`. The CLI uploads the working tree, and

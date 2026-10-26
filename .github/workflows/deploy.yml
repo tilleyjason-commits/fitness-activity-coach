@@ -16,7 +16,11 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    runs-on: ubuntu-latest
+    # Pinned, not `-latest`: GitHub migrates the `ubuntu-latest` label to a new
+    # image on its own schedule (Ubuntu 26 announced for Oct 2026), which would
+    # change the build toolchain under a deploy with no code change. Bump this
+    # deliberately.
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
