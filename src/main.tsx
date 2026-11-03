@@ -5,6 +5,12 @@ import { ErrorBoundary } from '~/components/ErrorBoundary';
 import { AuthProvider } from '~/context/AuthContext';
 import { applyTheme, getStoredTheme } from '~/lib/theme';
 import { registerServiceWorker } from '~/lib/register-sw';
+// Self-hosted (bundled) so no request goes to a third-party font CDN.
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-700.css';
+import '@fontsource/inter/latin-800.css';
 import '~/index.css';
 
 // The inline bootstrap in index.html already set the class before paint; this

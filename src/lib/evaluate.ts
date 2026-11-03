@@ -37,6 +37,8 @@ export interface Rule {
   fail: string;
   severity: Severity;
   evidence?: string;
+  /** Profile coaching flag the rule needs; the rule is skipped without it. */
+  requires_flag?: string;
 }
 
 export type RuleStatus = 'pass' | 'fail' | 'skipped';
@@ -60,6 +62,7 @@ interface RawRule {
   fail: string;
   severity: string;
   evidence?: string;
+  requires_flag?: string;
 }
 
 const SEVERITIES: readonly Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
@@ -591,6 +594,7 @@ export function buildContext(
     target_protein_max: targets.proteinMaxG,
     target_carbs: targets.carbsG,
     target_fat: targets.fatG,
+    fat_floor: Math.round(targets.fatG * 0.7),
 
     // Profile-driven timing windows (rules must use these — never clock literals)
     caffeine_cutoff: timing.caffeineCutoff,
@@ -622,6 +626,12 @@ export function buildContext(
     // Template helper
     abs: (n: number) => Math.abs(n),
   };
+}
+
+/** A rule with `requires_flag` applies only to profiles that opted in. */
+export function ruleAppliesToProfile(rule: Rule, profile: Profile | null | undefined): boolean {
+  if (!rule.requires_flag) return true;
+  return (profile?.coaching_flags ?? []).includes(rule.requires_flag);
 }
 
 /* ------------------------------------------------------------------ */
@@ -658,7 +668,7 @@ export function evaluateDay(
 ): RuleResult[] {
   const context = buildContext(log, weekly, profile, today);
   return getAllRules().map((rule) => {
-    if (!checkTrigger(rule.trigger, context)) {
+    if (!ruleAppliesToProfile(rule, profile) || !checkTrigger(rule.trigger, context)) {
       return { rule, status: 'skipped' as const, message: rule.description };
     }
     return evaluateRule(rule, context);

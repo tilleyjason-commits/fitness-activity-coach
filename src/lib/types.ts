@@ -22,6 +22,8 @@ export interface Profile {
   goal_weight_lb: number | null;
   training_years: number | null;
   training_time: string | null;
+  /** Opt-in coaching rules (e.g. 'knee_limited'). Absent until migration 026 is applied. */
+  coaching_flags?: string[];
 }
 
 /** The fields the onboarding wizard (/setup) collects; a subset of Profile. */
