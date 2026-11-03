@@ -94,7 +94,7 @@
         "pass": "One plate ✓ — dinner structured",
         "fail": "{dinner_plates} plates at dinner. Target: 1 plate. Protein + veg first, carbs last. Wait 10min before deciding if you need more.",
         "severity": "medium",
-        "evidence": "Program custom rule based on analysis of Jason's untracked restaurant dinners being the key variable in 4-month stall."
+        "evidence": "Program rule: untracked restaurant dinners are a common hidden variable in fat-loss stalls."
       },
       {
         "id": "dinner_protein_first",
@@ -145,7 +145,7 @@
         "domain": "nutrition",
         "description": "Daily fat >= 0.5 g/kg for hormone function",
         "trigger": "log.daily_fat_g > 0",
-        "evaluate": "daily_fat_g >= 46",
+        "evaluate": "daily_fat_g >= fat_floor",
         "pass": "Fat at {daily_fat_g}g - above floor ✓",
         "fail": "Fat at {daily_fat_g}g - below 46g minimum. Inadequate fat impairs testosterone. Minimum 0.5 g/kg/day.",
         "severity": "high",
@@ -210,28 +210,31 @@
       },
       {
         "id": "knee_safe_exercises",
+        "requires_flag": "knee_limited",
         "domain": "training",
         "description": "No barbell squats — use knee-safe alternatives",
         "trigger": "log.training.completed",
         "evaluate": "barbell_squat_done != true",
         "pass": "No barbell squats ✓ — knee-safe choices",
-        "fail": "Barbell squat logged. Your knee pain history indicates leg press + Bulgarian split squat + leg extension as safer alternatives.",
+        "fail": "Barbell squat logged. Because you marked your knees as a limitation, leg press + Bulgarian split squat + leg extension as safer alternatives.",
         "severity": "high",
-        "evidence": "Program custom rule based on Jason's knee pain history and self-correction in training log. Comerford & Mottram (2012): Movement screening and exercise selection for joint health."
+        "evidence": "Opt-in rule (Settings > knee_limited) for lifters with a knee pain history. Comerford & Mottram (2012): Movement screening and exercise selection for joint health."
       },
       {
         "id": "shoulder_safe_exercises",
+        "requires_flag": "shoulder_limited",
         "domain": "training",
         "description": "No barbell OHP — use DB neutral grip press",
         "trigger": "log.training.completed",
         "evaluate": "barbell_ohp_done != true",
         "pass": "No barbell OHP ✓ — shoulder-safe choices",
-        "fail": "Barbell OHP logged. Your shoulder pain history indicates DB neutral-grip press as a safer alternative. Consider reducing weight.",
+        "fail": "Barbell OHP logged. Because you marked your shoulders as a limitation, DB neutral-grip press as a safer alternative. Consider reducing weight.",
         "severity": "high",
-        "evidence": "Program custom rule based on Jason's shoulder pain."
+        "evidence": "Opt-in rule (Settings > shoulder_limited) for lifters with a shoulder pain history."
       },
       {
         "id": "face_pulls_twice_weekly",
+        "requires_flag": "shoulder_limited",
         "domain": "training",
         "description": "Face pulls 2x/week for shoulder health",
         "trigger": "log.day_of_week == 'Sunday'",

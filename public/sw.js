@@ -77,8 +77,10 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     precacheShell()
       // A shell entry that 404s must never block installation.
-      .catch(() => undefined)
-      .then(() => self.skipWaiting()),
+      // Do not activate immediately here: an updated worker waits until every open tab is
+      // closed. Activating mid-session deletes the old cache, and an open tab
+      // would then 404 on its old hashed lazy chunks and mix builds.
+      .catch(() => undefined),
   );
 });
 

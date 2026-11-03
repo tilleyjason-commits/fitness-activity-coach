@@ -50,6 +50,10 @@ function toCanonical(value: string, convert: (n: number) => number): number | nu
   return n === null || Number.isNaN(n) ? n : convert(n);
 }
 
+// Stable empty array: a fresh [] on every load would re-render in a loop when
+// the auth user object is not referentially stable.
+const NO_FLAGS: string[] = [];
+
 export default function Settings() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
@@ -68,6 +72,7 @@ export default function Settings() {
   const [goalBodyfat, setGoalBodyfat] = useState('');
   const [trainingYears, setTrainingYears] = useState('');
   const [trainingTime, setTrainingTime] = useState('11:00');
+  const [flags, setFlags] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +86,7 @@ export default function Settings() {
       .then(([data, preferred]) => {
         if (!active) return;
         setProfile(data);
+        setFlags(data?.coaching_flags ?? NO_FLAGS);
         setUnits(preferred);
         // The database stores cm and lb; show them in the user's own units.
         setAge(toStr(data?.age));
@@ -180,6 +186,8 @@ export default function Settings() {
         goal_weight_lb: toCanonical(goalWeight, (n) => weightToLb(n, units)),
         training_years: toNum(trainingYears),
         training_time: trainingTime.trim() === '' ? null : trainingTime,
+        // Only sent once migration 026 exists (the loaded row carries the column).
+        ...(profile && 'coaching_flags' in profile ? { coaching_flags: flags } : {}),
       });
       await savePreferredUnits(user.id, units);
       setProfile(updated);
@@ -416,6 +424,30 @@ export default function Settings() {
             />
           </div>
           </div>
+          {profile && 'coaching_flags' in profile && (
+            <fieldset className="mb-4">
+              <legend className="label">Joint limitations</legend>
+              <p className="mb-2 text-sm text-slate-500 dark:text-slate-400">
+                Turns on extra coaching rules that steer you away from risky lifts.
+              </p>
+              {[
+                { key: 'knee_limited', label: 'Knee limitation (avoid barbell squats)' },
+                { key: 'shoulder_limited', label: 'Shoulder limitation (avoid barbell overhead press)' },
+              ].map(({ key, label }) => (
+                <label key={key} className="flex min-h-11 items-center gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5"
+                    checked={flags.includes(key)}
+                    onChange={(e) =>
+                      setFlags((prev) => (e.target.checked ? [...prev, key] : prev.filter((f) => f !== key)))
+                    }
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
           {error && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
           {saved && !error && (
             <p className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">Profile updated.</p>

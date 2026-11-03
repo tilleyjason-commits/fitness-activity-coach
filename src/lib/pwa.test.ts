@@ -121,3 +121,20 @@ describe('service worker', () => {
     expect(sw).toContain('Object.values(manifest)');
   });
 });
+
+describe('update safety and install portability', () => {
+  it('keeps the manifest id relative so it works at any base path', () => {
+    expect((manifest as { id?: string }).id).toBe('./');
+  });
+
+  it('does not lock orientation', () => {
+    expect((manifest as { orientation?: string }).orientation).toBeUndefined();
+  });
+
+  it('does not skipWaiting on install (an open tab must keep its old cache)', async () => {
+    const sw = (await import('../../public/sw.js?raw')).default;
+    const installBlock = sw.slice(sw.indexOf("addEventListener('install'"), sw.indexOf("addEventListener('activate'"));
+    expect(installBlock).not.toContain('skipWaiting');
+    expect(sw).toContain("'SKIP_WAITING'");
+  });
+});

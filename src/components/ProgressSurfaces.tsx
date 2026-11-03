@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
+import { BodyProgress } from '~/components/BodyProgress';
 import { useAuth } from '~/context/AuthContext';
 import { getLogsBetween, getProfile } from '~/lib/db';
 import {
   listMeasurements,
   listPhotos,
-  saveMeasurement,
-  uploadProgressPhoto,
   type BodyMeasurement,
   type ProgressPhoto,
 } from '~/lib/plan-repo';
@@ -42,8 +41,6 @@ export function ProgressSurfaces({ lens }: { lens: 'calendar' | 'body' | 'streng
   const [selected, setSelected] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [chest, setChest] = useState('');
-  const [waistNote, setWaistNote] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -125,67 +122,14 @@ export function ProgressSurfaces({ lens }: { lens: 'calendar' | 'body' | 'streng
 
   if (lens === 'body') {
     return (
-      <div className="space-y-4">
-        <section className="card">
-          <h2 className="section-title">Goal</h2>
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            {goal === null ? 'Set a goal weight in More to draw the line on the weight chart.' : `Goal weight: ${goal} lb. The week chart draws this as a line.`}
-          </p>
-          <form
-            className="mt-3 flex flex-wrap gap-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!user) return;
-              void saveMeasurement(user.id, {
-                measuredOn: format(new Date(), 'yyyy-MM-dd'),
-                chestIn: chest ? Number(chest) : null,
-                armIn: null,
-                thighIn: null,
-                hipIn: null,
-                neckIn: null,
-                calfIn: null,
-                notes: waistNote,
-              }).then(() => listMeasurements().then(setMeasurements));
-            }}
-          >
-            <label className="text-sm font-semibold">
-              Chest (in)
-              <input className="field" value={chest} onChange={(e) => setChest(e.target.value)} inputMode="decimal" />
-            </label>
-            <label className="text-sm font-semibold">
-              Note
-              <input className="field" value={waistNote} onChange={(e) => setWaistNote(e.target.value)} />
-            </label>
-            <button type="submit" className="btn-primary">Save measurement</button>
-          </form>
-          <ul className="mt-3 space-y-1 text-sm">
-            {measurements.map((row) => (
-              <li key={row.id}>{row.measuredOn}: chest {row.chestIn ?? '—'} in {row.notes}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="card">
-          <h2 className="section-title">Photos</h2>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            aria-label="Progress photo"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file || !user) return;
-              void uploadProgressPhoto(user.id, file, format(new Date(), 'yyyy-MM-dd'), '').then(() => listPhotos().then(setPhotos));
-            }}
-          />
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            {photos.map((photo) => (
-              <figure key={photo.id}>
-                {photo.url && <img src={photo.url} alt={photo.caption || `Progress photo ${photo.takenOn}`} className="rounded-xl" />}
-                <figcaption className="text-xs text-slate-500">{photo.takenOn}</figcaption>
-              </figure>
-            ))}
-          </div>
-        </section>
-      </div>
+      <BodyProgress
+        userId={user?.id ?? ''}
+        goal={goal}
+        measurements={measurements}
+        photos={photos}
+        onMeasurements={setMeasurements}
+        onPhotos={setPhotos}
+      />
     );
   }
 

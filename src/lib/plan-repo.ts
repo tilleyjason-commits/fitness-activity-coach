@@ -279,15 +279,32 @@ export async function listPhotos(): Promise<ProgressPhoto[]> {
   return signed;
 }
 
+/** Keep in step with supabase/migrations/025_photo_bucket_limits.sql. */
+export const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+export const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+
+/** Returns a user-facing message when the file must not be uploaded, else null. */
+export function validatePhotoFile(file: Pick<File, 'type' | 'size'>): string | null {
+  if (!(PHOTO_MIME_TYPES as readonly string[]).includes(file.type)) {
+    return 'Choose a JPEG, PNG, or WebP image.';
+  }
+  if (file.size > PHOTO_MAX_BYTES) {
+    return `That photo is too large. The limit is ${PHOTO_MAX_BYTES / (1024 * 1024)} MB.`;
+  }
+  return null;
+}
+
 export async function uploadProgressPhoto(
   userId: string,
   file: File,
   takenOn: string,
   caption: string,
 ): Promise<void> {
+  const invalid = validatePhotoFile(file);
+  if (invalid) throw new Error(invalid);
   const path = `${userId}/${crypto.randomUUID()}-${file.name.replace(/[^\w.]+/g, '-')}`;
   const { error: uploadError } = await supabase.storage.from('progress-photos').upload(path, file, {
-    contentType: file.type || 'image/jpeg',
+    contentType: file.type,
     upsert: false,
   });
   if (uploadError) throw new Error(uploadError.message);
@@ -295,9 +312,19 @@ export async function uploadProgressPhoto(
     user_id: userId,
     taken_on: takenOn,
     storage_path: path,
-    caption,
+    caption: caption.slice(0, 140),
   });
+  if (error) {
+    // Do not leave an orphaned object behind when the row insert fails.
+    await supabase.storage.from('progress-photos').remove([path]);
+    throw new Error(error.message);
+  }
+}
+
+export async function deleteProgressPhoto(photo: Pick<ProgressPhoto, 'id' | 'storagePath'>): Promise<void> {
+  const { error } = await supabase.from('progress_photos').delete().eq('id', photo.id);
   if (error) throw new Error(error.message);
+  await supabase.storage.from('progress-photos').remove([photo.storagePath]);
 }
 
 export async function recordOverloadDecision(input: {

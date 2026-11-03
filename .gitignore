@@ -11,3 +11,6 @@ test-results/
 playwright-report/
 blob-report/
 dogfood-output/
+
+# Per-machine Claude Code permissions must not be shared via the repo
+.claude/settings.local.json
