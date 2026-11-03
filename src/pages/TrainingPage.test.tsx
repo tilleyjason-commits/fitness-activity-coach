@@ -322,3 +322,60 @@ describe('routine target carry-forward after a completed set', () => {
     expect(repo.saveRoutine).not.toHaveBeenCalled();
   });
 });
+
+describe('previous-session prefill', () => {
+  function lastSession() {
+    return {
+      id: 'h1',
+      loggedAt: '2020-01-06T12:00:00Z',
+      totalSets: 2,
+      completedSets: 2,
+      totalCardioMinutes: 0,
+      totalCardioMiles: 0,
+      date: '2020-01-06',
+      cardioExercises: [],
+      exercises: [
+        {
+          exercise: { id: 'bench-press', name: 'Bench Press', muscleGroup: 'Chest' },
+          targetSets: 2,
+          targetReps: 8,
+          targetWeight: 185,
+          sets: [
+            { reps: 9, weight: 195, rir: 2, completed: true },
+            { reps: 7, weight: 200, rir: 1, completed: true },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('fills the seeded routine sets with last session reps, weight and RIR', async () => {
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+
+    expect(await screen.findByText('9 \u00d7 195 lb')).toBeInTheDocument();
+    expect(screen.getByText('7 \u00d7 200 lb')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 1 RIR 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 2 RIR 1')).toBeInTheDocument();
+    // Third routine set has no counterpart last time: keeps the routine target, no RIR.
+    expect(screen.getByText('8 \u00d7 185 lb')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 3 RIR not set')).toBeInTheDocument();
+  });
+
+  it('does not re-apply over edits after a remount', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    const first = renderTraining();
+    await screen.findByText('9 \u00d7 195 lb');
+
+    await user.click(screen.getByLabelText('Increase RIR for set 1'));
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    first.unmount();
+
+    repo.getActiveWorkout.mockResolvedValue(null);
+    renderTraining();
+    expect(await screen.findByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+  });
+});

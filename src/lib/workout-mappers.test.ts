@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { DailyRoutine, Exercise, WorkoutState } from '~/lib/types';
+import type { DailyRoutine, Exercise, WorkoutHistoryEntry, WorkoutState } from '~/lib/types';
 import {
   applyCompletedSetToRoutine,
+  applyPreviousSessionToWorkout,
+  findLastPerformance,
+  pastSetForIndex,
+  prefillExerciseFromPrevious,
   createWorkoutExercise,
   mapRoutineItems,
   mapRoutineRowsToWeeklyRoutines,
@@ -285,5 +289,130 @@ describe('routine item set_targets mapping', () => {
   it('omits set_targets from the RPC payload until a set has been learned', () => {
     const items = mapRoutineItems(mondayPush());
     expect(items[0]).not.toHaveProperty('set_targets');
+  });
+});
+
+function historyEntry(
+  date: string,
+  sets: WorkoutState['exercises'][number]['sets'],
+  exercise: Exercise = BENCH,
+): WorkoutHistoryEntry {
+  return {
+    id: `h-${date}`,
+    loggedAt: `${date}T12:00:00Z`,
+    totalSets: sets.length,
+    completedSets: sets.filter((set) => set.completed).length,
+    totalCardioMinutes: 0,
+    totalCardioMiles: 0,
+    date,
+    cardioExercises: [],
+    exercises: [
+      { exercise, targetSets: sets.length, targetReps: 8, targetWeight: 0, sets },
+    ],
+  };
+}
+
+const LAST_MONDAY = historyEntry('2026-10-26', [
+  { reps: 8, weight: 185, rir: 2, completed: true },
+  { reps: 7, weight: 190, rir: 1, completed: true },
+  { reps: 6, weight: 190, rir: 0, completed: true },
+  { reps: 5, weight: 190, rir: null, completed: false },
+]);
+
+describe('pastSetForIndex', () => {
+  const past = [
+    { reps: 8, weight: 185, rir: 2 },
+    { reps: 7, weight: 190, rir: 1 },
+  ];
+  it('returns the set at the index', () => {
+    expect(pastSetForIndex(past, 1)).toEqual(past[1]);
+  });
+  it('returns null beyond the prior session set count instead of reusing the last set', () => {
+    expect(pastSetForIndex(past, 2)).toBeNull();
+    expect(pastSetForIndex(null, 0)).toBeNull();
+  });
+});
+
+describe('findLastPerformance', () => {
+  it('ignores incomplete and warm-up sets', () => {
+    const entry = historyEntry('2026-10-26', [
+      { reps: 10, weight: 95, rir: null, completed: true, setType: 'warmup' },
+      { reps: 8, weight: 185, rir: 2, completed: true, setType: 'working' },
+      { reps: 8, weight: 185, rir: null, completed: false },
+    ]);
+    expect(findLastPerformance([entry], BENCH.id, '2026-11-02')).toEqual([
+      { reps: 8, weight: 185, rir: 2 },
+    ]);
+  });
+});
+
+describe('previous-session prefill', () => {
+  it('copies completed reps, weight and RIR from the last session onto untouched sets', () => {
+    const fresh = createWorkoutExercise(BENCH, 3, 10, 50);
+    const filled = prefillExerciseFromPrevious(fresh, [LAST_MONDAY], '2026-11-02');
+    expect(filled.sets.map((s) => [s.reps, s.weight, s.rir, s.completed])).toEqual([
+      [8, 185, 2, false],
+      [7, 190, 1, false],
+      [6, 190, 0, false],
+    ]);
+  });
+
+  it('only fills as many sets as the last session completed; extra sets keep their own values', () => {
+    const fresh = createWorkoutExercise(BENCH, 5, 10, 50);
+    const filled = prefillExerciseFromPrevious(fresh, [LAST_MONDAY], '2026-11-02');
+    expect(filled.sets.slice(3).map((s) => [s.reps, s.weight, s.rir])).toEqual([
+      [10, 50, null],
+      [10, 50, null],
+    ]);
+  });
+
+  it('uses the most recent earlier session, ignoring same-day and future entries', () => {
+    const newer = historyEntry('2026-10-30', [{ reps: 9, weight: 195, rir: 1, completed: true }]);
+    const sameDay = historyEntry('2026-11-02', [{ reps: 1, weight: 1, rir: 0, completed: true }]);
+    const filled = prefillExerciseFromPrevious(
+      createWorkoutExercise(BENCH, 1, 10, 50),
+      [sameDay, newer, LAST_MONDAY],
+      '2026-11-02',
+    );
+    expect(filled.sets[0]).toMatchObject({ reps: 9, weight: 195, rir: 1 });
+  });
+
+  it('leaves warm-up sets alone and matches working sets in order', () => {
+    const fresh = createWorkoutExercise(BENCH, 3, 10, 50);
+    fresh.sets[0] = { reps: 12, weight: 45, rir: null, completed: false, setType: 'warmup' };
+    const filled = prefillExerciseFromPrevious(fresh, [LAST_MONDAY], '2026-11-02');
+    expect(filled.sets[0]).toEqual(fresh.sets[0]);
+    expect(filled.sets[1]).toMatchObject({ reps: 8, weight: 185, rir: 2 });
+    expect(filled.sets[2]).toMatchObject({ reps: 7, weight: 190, rir: 1 });
+  });
+
+  it('does not touch an exercise already in progress', () => {
+    const fresh = createWorkoutExercise(BENCH, 2, 10, 50);
+    fresh.sets[0] = { reps: 10, weight: 50, rir: 3, completed: true };
+    expect(prefillExerciseFromPrevious(fresh, [LAST_MONDAY], '2026-11-02')).toBe(fresh);
+  });
+
+  it('skips duration-based log types', () => {
+    const fresh = { ...createWorkoutExercise(BENCH, 2, 10, 50), logType: 'duration' as const };
+    expect(prefillExerciseFromPrevious(fresh, [LAST_MONDAY], '2026-11-02')).toBe(fresh);
+  });
+
+  it('returns the same reference when there is no history or nothing changes', () => {
+    const fresh = createWorkoutExercise(BENCH, 2, 10, 50);
+    expect(prefillExerciseFromPrevious(fresh, [], '2026-11-02')).toBe(fresh);
+    const once = prefillExerciseFromPrevious(fresh, [LAST_MONDAY], '2026-11-02');
+    expect(prefillExerciseFromPrevious(once, [LAST_MONDAY], '2026-11-02')).toBe(once);
+  });
+
+  it('applies only to the requested exercise ids', () => {
+    const workout: WorkoutState = {
+      date: '2026-11-02',
+      cardioExercises: [],
+      exercises: [createWorkoutExercise(BENCH, 2, 10, 50), createWorkoutExercise(ROW, 2, 10, 50)],
+    };
+    const rowHistory = historyEntry('2026-10-26', [{ reps: 12, weight: 100, rir: 3, completed: true }], ROW);
+    const next = applyPreviousSessionToWorkout(workout, [LAST_MONDAY, rowHistory], new Set([BENCH.id]));
+    expect(next.exercises[0].sets[0]).toMatchObject({ reps: 8, weight: 185, rir: 2 });
+    expect(next.exercises[1]).toBe(workout.exercises[1]);
   });
 });

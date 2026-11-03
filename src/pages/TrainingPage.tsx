@@ -43,6 +43,8 @@ import {
   applyCompletedSetToRoutine,
   createCardioWorkoutExercise,
   createWorkoutExercise,
+  applyPreviousSessionToWorkout,
+  prefillExerciseFromPrevious,
   findLastPerformance,
   getTodayWeekday,
   getWorkoutTotals,
@@ -53,6 +55,11 @@ import {
   updateSetRecord,
   type PastSet,
 } from '~/lib/workout-mappers';
+import {
+  clearPrefilledExercises,
+  markExercisesPrefilled,
+  readPrefilledExerciseIds,
+} from '~/lib/previous-session-prefill';
 import { recordOverloadDecision } from '~/lib/plan-repo';
 import { buildScorecard, formatClock } from '~/lib/training-surface';
 import type {
@@ -312,6 +319,8 @@ export default function TrainingPage() {
     setSaveError(null);
     setShowSelector(false);
     dirtyRef.current = true;
+    // A brand-new workout is eligible for the previous-session prefill again.
+    if (user) clearPrefilledExercises(user.id, today);
     const next = routine
       ? replaceWorkoutWithRoutine(routine, today)
       : { exercises: [], cardioExercises: [], date: today };
@@ -321,12 +330,22 @@ export default function TrainingPage() {
 
   const addExercise = useCallback(
     (exercise: Exercise, sets: number, reps: number, weight: number) => {
-      mutateWorkout((current) => ({
-        ...current,
-        exercises: [...current.exercises, createWorkoutExercise(exercise, sets, reps, weight)],
-      }));
+      // History loaded: apply last session's values now and record it. Not
+      // loaded yet: leave the id unmarked so the effect below fills it in.
+      const historyReady = !historyLoading && !historyError;
+      if (user && historyReady) markExercisesPrefilled(user.id, today, [exercise.id]);
+      mutateWorkout((current) => {
+        const created = createWorkoutExercise(exercise, sets, reps, weight);
+        return {
+          ...current,
+          exercises: [
+            ...current.exercises,
+            historyReady ? prefillExerciseFromPrevious(created, history, current.date) : created,
+          ],
+        };
+      });
     },
-    [mutateWorkout],
+    [mutateWorkout, user, today, history, historyLoading, historyError],
   );
 
   const addCardio = useCallback(
@@ -389,6 +408,22 @@ export default function TrainingPage() {
     return map;
   }, [workout, history, today]);
 
+  // Pre-fill reps / weight / RIR from the last session once per exercise, as
+  // soon as both the workout and the history are available (routine seed,
+  // restored plan day, or a manual add made before history loaded). The
+  // per-day marker stops a remount from re-applying over later edits.
+  useEffect(() => {
+    if (!user || !workout || loading || historyLoading || historyError) return;
+    const done = readPrefilledExerciseIds(user.id, workout.date);
+    const pending = new Set(
+      workout.exercises.map((we) => we.exercise.id).filter((id) => !done.has(id)),
+    );
+    if (pending.size === 0) return;
+    markExercisesPrefilled(user.id, workout.date, pending);
+    const next = applyPreviousSessionToWorkout(workout, history, pending);
+    if (next !== workout) mutateWorkout((current) => applyPreviousSessionToWorkout(current, history, pending));
+  }, [user, workout, history, loading, historyLoading, historyError, mutateWorkout]);
+
   const removeExercise = useCallback(
     (exIdx: number) => {
       mutateWorkout((current) => ({
@@ -442,6 +477,7 @@ export default function TrainingPage() {
       // replay stale state and recreate an active workout for this date.
       dequeueWorkoutSave(user.id, today);
       clearWorkoutDraft(user.id);
+      clearPrefilledExercises(user.id, today);
       clearPersistedTimer();
       setWorkout(null);
       setCompletedToday(true);
