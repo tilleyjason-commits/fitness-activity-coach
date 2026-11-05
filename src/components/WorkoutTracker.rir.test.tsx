@@ -32,7 +32,7 @@ function makeExercise(overrides: Partial<WorkoutExercise> = {}): WorkoutExercise
 
 function renderTracker(
   exercises: WorkoutExercise[],
-  pastByExerciseId?: Record<string, PastSet[]>,
+  pastBySlot?: Record<string, PastSet[]>,
 ) {
   return render(
     <WorkoutTracker
@@ -42,7 +42,7 @@ function renderTracker(
       onSetRir={onSetRir}
       onRemoveExercise={onRemoveExercise}
       onRemoveCardioExercise={onRemoveCardioExercise}
-      pastByExerciseId={pastByExerciseId}
+      pastBySlot={pastBySlot}
     />,
   );
 }
@@ -136,7 +136,7 @@ describe('last-time overload reference', () => {
         }),
       ],
       {
-        rdl: [
+        'rdl#0': [
           { reps: 8, weight: 155, rir: 2 },
           { reps: 7, weight: 155, rir: 1 },
         ],

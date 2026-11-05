@@ -7,6 +7,7 @@ import {
   readPendingWorkoutPrefill,
 } from '~/lib/workout-draft';
 import type { WorkoutState } from '~/lib/types';
+import { exerciseSlotKeys } from '~/lib/workout-mappers';
 
 const today = '2026-08-13';
 
@@ -27,6 +28,31 @@ function workout(overrides: Partial<WorkoutState> = {}): WorkoutState {
     ],
     cardioExercises: [],
     ...overrides,
+  };
+}
+
+/** Today's plan has Bench twice: a top set and a back-off copy. */
+function duplicateWorkout(): WorkoutState {
+  const exercise = { id: 'bench-press', name: 'Bench Press', muscleGroup: 'Chest' };
+  return {
+    date: today,
+    exercises: [
+      {
+        exercise,
+        targetSets: 1,
+        targetReps: 5,
+        targetWeight: 225,
+        sets: [{ reps: 5, weight: 225, rir: 1, completed: false }],
+      },
+      {
+        exercise,
+        targetSets: 1,
+        targetReps: 12,
+        targetWeight: 145,
+        sets: [{ reps: 12, weight: 145, rir: 2, completed: false }],
+      },
+    ],
+    cardioExercises: [],
   };
 }
 
@@ -57,7 +83,8 @@ describe('workout draft persistence', () => {
 
   it('round-trips pending seed provenance without leaking it into cloud-bound state', () => {
     const seed = workout();
-    const pending = new Map(seed.exercises.map((we) => [we.exercise.id, JSON.stringify(we)]));
+    const pending = new Map(exerciseSlotKeys(seed.exercises).map((slot, index) =>
+      [slot, JSON.stringify(seed.exercises[index])]));
     persistWorkoutDraft('user-abc', seed, pending);
     const restored = readWorkoutDraft('user-abc', today)!;
     expect(restored).toEqual(seed);
@@ -65,6 +92,31 @@ describe('workout draft persistence', () => {
     expect(readPendingWorkoutPrefill('user-abc', restored)).toEqual(pending);
     expect(readPendingWorkoutPrefill('user-other', restored).size).toBe(0);
     expect(readPendingWorkoutPrefill('user-abc', { ...restored, date: '2026-08-14' }).size).toBe(0);
+  });
+
+  it('tracks duplicate copies by slot, not by exercise id', () => {
+    const seed = duplicateWorkout();
+    const pending = new Map(exerciseSlotKeys(seed.exercises).map((slot, index) =>
+      [slot, JSON.stringify(seed.exercises[index])]));
+    persistWorkoutDraft('user-abc', seed, pending);
+
+    // Editing the back-off copy only invalidates that copy's provenance.
+    seed.exercises[1].sets[0].weight = 140;
+    const restored = readPendingWorkoutPrefill('user-abc', seed);
+    expect([...restored.keys()]).toEqual(['bench-press#0']);
+
+    // Editing the top set invalidates the first copy too.
+    seed.exercises[0].sets[0].weight = 230;
+    expect(readPendingWorkoutPrefill('user-abc', seed).size).toBe(0);
+  });
+
+  it('still applies a legacy bare-id fingerprint to the copy it matches', () => {
+    const seed = duplicateWorkout();
+    localStorage.setItem('fac-workout-draft-v1:user-abc', JSON.stringify({
+      ...seed,
+      __pendingPrefill: { 'bench-press': JSON.stringify(seed.exercises[0]) },
+    }));
+    expect([...readPendingWorkoutPrefill('user-abc', seed).keys()]).toEqual(['bench-press#0']);
   });
 
   it('drops provenance once the machine-created exercise has changed', () => {

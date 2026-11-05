@@ -46,6 +46,11 @@ vi.mock('~/lib/workout-repo', () => ({
   completeWorkout: (...a: unknown[]) => repo.completeWorkout(...a),
 }));
 
+const overloadMock = vi.hoisted(() => ({ recordOverloadDecision: vi.fn() }));
+vi.mock('~/lib/plan-repo', () => ({
+  recordOverloadDecision: overloadMock.recordOverloadDecision,
+}));
+
 function routinesWithTodayPreset(): WeeklyRoutines {
   const weekly = createEmptyWeeklyRoutines();
   const today = getTodayWeekday();
@@ -86,6 +91,8 @@ beforeEach(() => {
   repo.hasCompletedWorkout.mockResolvedValue(false);
   repo.saveWorkoutState.mockResolvedValue(undefined);
   repo.saveRoutine.mockResolvedValue(undefined);
+  repo.completeWorkout.mockResolvedValue(undefined);
+  overloadMock.recordOverloadDecision.mockResolvedValue(undefined);
 });
 
 describe('Training page tab navigation', () => {
@@ -475,5 +482,285 @@ describe('previous-session prefill', () => {
     repo.getActiveWorkout.mockResolvedValue(null);
     renderTraining();
     expect(await screen.findByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+  });
+});
+
+describe('duplicate exercise occurrences', () => {
+  const BENCH = { id: 'bench-press', name: 'Bench Press', muscleGroup: 'Chest' };
+
+  /** Today's preset puts Bench on the plan twice: a top set and a back-off. */
+  function duplicateRoutine(): WeeklyRoutines {
+    const weekly = createEmptyWeeklyRoutines();
+    const today = getTodayWeekday();
+    weekly[today] = {
+      day: today,
+      name: 'Push Day',
+      cardioExercises: [],
+      exercises: [
+        { exercise: BENCH, targetSets: 2, targetReps: 8, targetWeight: 185 },
+        { exercise: BENCH, targetSets: 1, targetReps: 15, targetWeight: 135 },
+      ],
+    };
+    return weekly;
+  }
+
+  function session(
+    occurrences: Array<Array<{ reps: number; weight: number; rir: number | null; setType?: 'working' | 'warmup' }>>,
+    date = '2020-01-06',
+  ) {
+    return {
+      id: `h-${date}`,
+      loggedAt: `${date}T12:00:00Z`,
+      date,
+      totalSets: occurrences.reduce((total, sets) => total + sets.length, 0),
+      completedSets: occurrences.reduce((total, sets) => total + sets.length, 0),
+      totalCardioMinutes: 0,
+      totalCardioMiles: 0,
+      cardioExercises: [],
+      exercises: occurrences.map((sets) => ({
+        exercise: BENCH,
+        targetSets: sets.length,
+        targetReps: sets[0].reps,
+        targetWeight: sets[0].weight,
+        sets: sets.map((set) => ({ ...set, completed: true })),
+      })),
+    };
+  }
+
+  function twoOccurrences() {
+    return session([[{ reps: 5, weight: 225, rir: 1 }], [{ reps: 12, weight: 145, rir: 2 }]]);
+  }
+
+  it('prefills each routine copy from its own prior occurrence', async () => {
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    repo.getWorkoutHistory.mockResolvedValue([twoOccurrences()]);
+    renderTraining();
+
+    // First copy: top set from the first prior Bench, second set keeps its target.
+    expect(await screen.findByText('5 × 225 lb')).toBeInTheDocument();
+    // Second copy: the back-off numbers, not the top set repeated.
+    expect(screen.getByText('12 × 145 lb')).toBeInTheDocument();
+    expect(screen.queryByText('15 × 135 lb')).not.toBeInTheDocument();
+    expect(screen.getByText(/Last time: 12 × 145 lb/)).toBeInTheDocument();
+  });
+
+  it('keeps a copy on its targets when the newest session lacks that occurrence', async () => {
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    repo.getWorkoutHistory.mockResolvedValue([session([[{ reps: 5, weight: 225, rir: 1 }]])]);
+    renderTraining();
+
+    expect(await screen.findByText('5 × 225 lb')).toBeInTheDocument();
+    // No second Bench last time: the back-off keeps its own target and no hint.
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+    expect(screen.getAllByText(/Last time:/)).toHaveLength(1);
+  });
+
+  it('fills the untouched copy while keeping an edit on the other', async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (value: ReturnType<typeof session>[]) => void;
+    repo.getWorkoutHistory.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveHistory = resolve; }),
+    );
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    renderTraining();
+    await screen.findAllByText('Bench Press');
+
+    // Raise the back-off copy's first-set RIR before history arrives.
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+    await act(async () => { resolveHistory([twoOccurrences()]); });
+
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    expect(screen.getByText('5 × 225 lb')).toBeInTheDocument();
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+    expect(screen.queryByText('12 × 145 lb')).not.toBeInTheDocument();
+  });
+
+  it('keeps duplicate seeds eligible after a remount and protects the edited copy', async () => {
+    const user = userEvent.setup();
+    repo.getWorkoutHistory.mockImplementationOnce(() => new Promise(() => {}));
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    const first = renderTraining();
+    await screen.findAllByText('Bench Press');
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+    first.unmount();
+
+    localStorage.removeItem(`fac-prefilled-v1:user-abc:${format(new Date(), 'yyyy-MM-dd')}`);
+    repo.getWorkoutHistory.mockResolvedValue([twoOccurrences()]);
+    renderTraining();
+
+    expect(await screen.findByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    expect(screen.getByText('5 × 225 lb')).toBeInTheDocument();
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+  });
+
+  it('keeps a delayed-history edit when an earlier duplicate is removed', async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (value: ReturnType<typeof session>[]) => void;
+    repo.getWorkoutHistory.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveHistory = resolve; }),
+    );
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    renderTraining();
+    await screen.findAllByText('Bench Press');
+
+    // Edit the second copy (back-off) while history is still loading.
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+
+    // Removing the first copy renumbers the survivor from occurrence 1 to 0.
+    await user.click(screen.getAllByLabelText('Remove Bench Press')[0]);
+    expect(screen.getAllByText('Bench Press')).toHaveLength(1);
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+    // The persisted guard moves with the survivor instead of going stale.
+    const markers = JSON.parse(
+      localStorage.getItem(`fac-prefilled-v1:user-abc:${format(new Date(), 'yyyy-MM-dd')}`) ?? '[]',
+    ) as string[];
+    expect([...markers].sort()).toEqual(['bench-press#0']);
+
+    await act(async () => { resolveHistory([twoOccurrences()]); });
+
+    // The survivor was edited, so its renumbered slot must stay protected.
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+    expect(screen.queryByText('5 × 225 lb')).not.toBeInTheDocument();
+  });
+
+  it('preserves the survivor edit through removal when localStorage writes fail', async () => {
+    const user = userEvent.setup();
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+    try {
+      let resolveHistory!: (value: ReturnType<typeof session>[]) => void;
+      repo.getWorkoutHistory.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveHistory = resolve; }),
+      );
+      repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+      renderTraining();
+      await screen.findAllByText('Bench Press');
+
+      await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+      await user.click(screen.getAllByLabelText('Increase RIR for set 1')[1]);
+      await user.click(screen.getAllByLabelText('Remove Bench Press')[0]);
+
+      await act(async () => { resolveHistory([twoOccurrences()]); });
+
+      // The in-memory guard is rebased with the slot even though the marker
+      // could not be persisted.
+      expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+      expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+      expect(screen.queryByText('5 × 225 lb')).not.toBeInTheDocument();
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
+  it('still prefills the untouched survivor when an untouched first copy is removed', async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (value: ReturnType<typeof session>[]) => void;
+    repo.getWorkoutHistory.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveHistory = resolve; }),
+    );
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    renderTraining();
+    await screen.findAllByText('Bench Press');
+
+    await user.click(screen.getAllByLabelText('Remove Bench Press')[0]);
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+
+    await act(async () => { resolveHistory([twoOccurrences()]); });
+
+    // Nothing was edited, so the remaining copy is still eligible and now
+    // matches the first occurrence.
+    expect(await screen.findByText('5 × 225 lb')).toBeInTheDocument();
+  });
+
+  it('prefills an untouched survivor when the edited first copy is removed', async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (value: ReturnType<typeof session>[]) => void;
+    repo.getWorkoutHistory.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveHistory = resolve; }),
+    );
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    renderTraining();
+    await screen.findAllByText('Bench Press');
+
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[0]);
+    await user.click(screen.getAllByLabelText('Increase RIR for set 1')[0]);
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+
+    await user.click(screen.getAllByLabelText('Remove Bench Press')[0]);
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+
+    await act(async () => { resolveHistory([twoOccurrences()]); });
+
+    // The edit left with the removed copy; the marker must not suppress the
+    // untouched copy that inherited occurrence 0.
+    expect(await screen.findByText('5 × 225 lb')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Set 1 RIR 3')).not.toBeInTheDocument();
+  });
+
+  it('keeps an untouched survivor eligible after removal and remount', async () => {
+    const user = userEvent.setup();
+    repo.getWorkoutHistory.mockImplementationOnce(() => new Promise(() => {}));
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    const first = renderTraining();
+    await screen.findAllByText('Bench Press');
+
+    await user.click(screen.getAllByLabelText('Remove Bench Press')[0]);
+    first.unmount();
+
+    repo.getWorkoutHistory.mockResolvedValue([twoOccurrences()]);
+    renderTraining();
+
+    expect(await screen.findByText('5 × 225 lb')).toBeInTheDocument();
+  });
+
+  it('offers one shared finish decision from the first copy and records that suggestion', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    repo.getWorkoutHistory.mockResolvedValue([twoOccurrences()]);
+    renderTraining();
+    await screen.findByText('5 × 225 lb');
+
+    await user.click(screen.getByRole('button', { name: /finish workout/i }));
+    expect(screen.getByText(/Bench Press: 5 × 230/)).toBeInTheDocument();
+    expect(screen.getByText(/applies to all 2 copies/i)).toBeInTheDocument();
+    expect(screen.queryByText('Bench Press: 13 × 145')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Accept' })).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'Accept' }));
+    await user.click(screen.getByRole('button', { name: 'Finish' }));
+
+    await waitFor(() => expect(overloadMock.recordOverloadDecision).toHaveBeenCalledTimes(1));
+    expect(overloadMock.recordOverloadDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        exerciseId: 'bench-press',
+        workoutDate: format(new Date(), 'yyyy-MM-dd'),
+        decision: 'accept',
+        suggestedReps: 5,
+        suggestedWeight: 230,
+      }),
+    );
+  });
+
+  it('keeps current targets when the newest session has the copy but no completed working sets', async () => {
+    const newest = twoOccurrences();
+    newest.exercises[1].sets = [{ reps: 12, weight: 45, rir: null, completed: true, setType: 'warmup' }];
+    const older = session(
+      [[{ reps: 5, weight: 205, rir: 1 }], [{ reps: 12, weight: 115, rir: 2 }]],
+      '2020-01-01',
+    );
+    repo.getWeeklyRoutines.mockResolvedValue(duplicateRoutine());
+    repo.getWorkoutHistory.mockResolvedValue([newest, older]);
+    renderTraining();
+
+    expect(await screen.findByText('5 × 225 lb')).toBeInTheDocument();
+    expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
+    expect(screen.queryByText('12 × 115 lb')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Last time:/)).toHaveLength(1);
   });
 });

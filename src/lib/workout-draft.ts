@@ -6,6 +6,7 @@
  * save lands, so the latest sets must live in localStorage first.
  */
 import type { WorkoutState } from './types';
+import { exerciseSlotKeys } from './workout-mappers';
 
 const DRAFT_PREFIX = 'fac-workout-draft-v1:';
 
@@ -31,9 +32,12 @@ export function persistWorkoutDraft(
   try {
     // Local-only provenance, saved atomically with the exact snapshot. Only
     // unchanged machine-created exercises remain eligible after a remount.
-    const pending = Object.fromEntries(workout.exercises.flatMap((we) => {
-      const fingerprint = pendingPrefill.get(we.exercise.id);
-      return fingerprint === JSON.stringify(we) ? [[we.exercise.id, fingerprint]] : [];
+    // Keyed by slot so the second copy of a duplicated exercise keeps its own
+    // provenance; a bare-id fingerprint from an older draft still matches.
+    const slots = exerciseSlotKeys(workout.exercises);
+    const pending = Object.fromEntries(workout.exercises.flatMap((we, index) => {
+      const fingerprint = pendingPrefill.get(slots[index]) ?? pendingPrefill.get(we.exercise.id);
+      return fingerprint === JSON.stringify(we) ? [[slots[index], fingerprint]] : [];
     }));
     const record = Object.keys(pending).length > 0 ? { ...workout, __pendingPrefill: pending } : workout;
     localStorage.setItem(workoutDraftKey(userId), JSON.stringify(record));
@@ -62,10 +66,12 @@ export function readPendingWorkoutPrefill(userId: string, workout: WorkoutState)
     if (!isWorkoutState(raw) || raw.date !== workout.date) return new Map();
     const pending = (raw as WorkoutState & { __pendingPrefill?: unknown }).__pendingPrefill;
     if (!pending || typeof pending !== 'object' || Array.isArray(pending)) return new Map();
-    return new Map(workout.exercises.flatMap((we) => {
-      const fingerprint = (pending as Record<string, unknown>)[we.exercise.id];
+    const slots = exerciseSlotKeys(workout.exercises);
+    return new Map(workout.exercises.flatMap((we, index) => {
+      const fingerprint = (pending as Record<string, unknown>)[slots[index]]
+        ?? (pending as Record<string, unknown>)[we.exercise.id];
       return typeof fingerprint === 'string' && fingerprint === JSON.stringify(we)
-        ? [[we.exercise.id, fingerprint] as const] : [];
+        ? [[slots[index], fingerprint] as const] : [];
     }));
   } catch {
     return new Map();

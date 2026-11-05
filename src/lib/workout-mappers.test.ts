@@ -7,6 +7,7 @@ import {
   pastSetForIndex,
   prefillExerciseFromPrevious,
   createWorkoutExercise,
+  exerciseSlotRebaseAfterRemoval,
   mapRoutineItems,
   mapRoutineRowsToWeeklyRoutines,
   replaceWorkoutWithRoutine,
@@ -414,5 +415,117 @@ describe('previous-session prefill', () => {
     const next = applyPreviousSessionToWorkout(workout, [LAST_MONDAY, rowHistory], new Set([BENCH.id]));
     expect(next.exercises[0].sets[0]).toMatchObject({ reps: 8, weight: 185, rir: 2 });
     expect(next.exercises[1]).toBe(workout.exercises[1]);
+  });
+});
+
+describe('duplicate exercises match by occurrence', () => {
+  /** One session that logged Bench twice: a top set, then a back-off set. */
+  function duplicateSession(date = '2026-10-26'): WorkoutHistoryEntry {
+    const entry = historyEntry(date, [{ reps: 5, weight: 225, rir: 1, completed: true }]);
+    const backoff = createWorkoutExercise(BENCH, 1, 15, 135);
+    backoff.sets[0] = { reps: 15, weight: 135, rir: 2, completed: true };
+    return { ...entry, exercises: [entry.exercises[0], backoff] };
+  }
+
+  function duplicateWorkout(): WorkoutState {
+    return {
+      date: '2026-11-02',
+      cardioExercises: [],
+      exercises: [createWorkoutExercise(BENCH, 1, 5, 185), createWorkoutExercise(BENCH, 2, 10, 135)],
+    };
+  }
+
+  it('returns the prior working sets of the requested occurrence', () => {
+    expect(findLastPerformance([duplicateSession()], BENCH.id, '2026-11-02', 0)).toEqual([
+      { reps: 5, weight: 225, rir: 1 },
+    ]);
+    expect(findLastPerformance([duplicateSession()], BENCH.id, '2026-11-02', 1)).toEqual([
+      { reps: 15, weight: 135, rir: 2 },
+    ]);
+  });
+
+  it('does not fall back to an older session when the newest matching session lacks that occurrence', () => {
+    const newest = historyEntry('2026-10-30', [{ reps: 5, weight: 225, rir: 1, completed: true }]);
+    expect(findLastPerformance([newest, LAST_MONDAY], BENCH.id, '2026-11-02', 1)).toBeNull();
+  });
+
+  it('does not borrow older working sets when the newest session has the copy but no completed working sets', () => {
+    const newest = duplicateSession('2026-10-30');
+    newest.exercises[1].sets = [{ reps: 12, weight: 45, rir: null, completed: true, setType: 'warmup' }];
+    expect(findLastPerformance([newest, LAST_MONDAY], BENCH.id, '2026-11-02', 1)).toBeNull();
+  });
+
+  it('keeps the most-recent-session rule for each occurrence', () => {
+    const newer = duplicateSession('2026-10-30');
+    expect(findLastPerformance([newer, LAST_MONDAY], BENCH.id, '2026-11-02', 1)).toEqual([
+      { reps: 15, weight: 135, rir: 2 },
+    ]);
+  });
+
+  it('prefills each copy from its matching prior occurrence, in working-set order', () => {
+    const next = applyPreviousSessionToWorkout(
+      duplicateWorkout(),
+      [duplicateSession()],
+      new Set(['bench-press#0', 'bench-press#1']),
+    );
+    expect(next.exercises[0].sets.map((set) => [set.reps, set.weight, set.rir])).toEqual([
+      [5, 225, 1],
+    ]);
+    expect(next.exercises[1].sets.map((set) => [set.reps, set.weight, set.rir])).toEqual([
+      [15, 135, 2],
+      [10, 135, null],
+    ]);
+  });
+
+  it('leaves a copy with no matching prior occurrence on its own targets', () => {
+    const workout = duplicateWorkout();
+    const next = applyPreviousSessionToWorkout(
+      workout,
+      [LAST_MONDAY],
+      new Set(['bench-press#0', 'bench-press#1']),
+    );
+    expect(next.exercises[0].sets[0]).toMatchObject({ reps: 8, weight: 185, rir: 2 });
+    expect(next.exercises[1]).toBe(workout.exercises[1]);
+  });
+
+  it('does not let a bare exercise id select later occurrences', () => {
+    const workout = duplicateWorkout();
+    const next = applyPreviousSessionToWorkout(workout, [duplicateSession()], new Set([BENCH.id]));
+    expect(next.exercises[0].sets[0]).toMatchObject({ reps: 5, weight: 225, rir: 1 });
+    expect(next.exercises[1]).toBe(workout.exercises[1]);
+  });
+});
+
+describe('exerciseSlotRebaseAfterRemoval', () => {
+  const copies = [
+    { exercise: BENCH },
+    { exercise: BENCH },
+    { exercise: BENCH },
+    { exercise: ROW },
+  ];
+
+  it('moves the removed slot and shifts later duplicates down one occurrence', () => {
+    expect(exerciseSlotRebaseAfterRemoval(copies, 0)).toEqual({
+      removedSlot: 'bench-press#0',
+      moves: [
+        { from: 'bench-press#1', to: 'bench-press#0' },
+        { from: 'bench-press#2', to: 'bench-press#1' },
+      ],
+    });
+  });
+
+  it('keeps earlier copies in place when a middle duplicate is removed', () => {
+    expect(exerciseSlotRebaseAfterRemoval(copies, 1)).toEqual({
+      removedSlot: 'bench-press#1',
+      moves: [{ from: 'bench-press#2', to: 'bench-press#1' }],
+    });
+  });
+
+  it('returns no moves for a unique exercise and ignores other exercises', () => {
+    expect(exerciseSlotRebaseAfterRemoval(copies, 3)).toEqual({
+      removedSlot: 'barbell-row#0',
+      moves: [],
+    });
+    expect(exerciseSlotRebaseAfterRemoval([], 0)).toBeNull();
   });
 });
