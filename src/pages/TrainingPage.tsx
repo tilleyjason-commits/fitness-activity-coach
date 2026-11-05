@@ -361,6 +361,7 @@ export default function TrainingPage() {
     dirtyRef.current = true;
     // A brand-new workout is eligible for the previous-session prefill again.
     prefilledExerciseIdsRef.current.clear();
+    setDecisions({});
     if (user) clearPrefilledExercises(user.id, today);
     const next = routine
       ? replaceWorkoutWithRoutine(routine, today)
@@ -591,6 +592,7 @@ export default function TrainingPage() {
       clearPrefilledExercises(user.id, today);
       clearPersistedTimer();
       setWorkout(null);
+      setDecisions({});
       setCompletedToday(true);
       setConfirmFinish(false);
       setShowRestTimer(false);
@@ -845,8 +847,22 @@ export default function TrainingPage() {
                       )}
                     </span>
                     <span className="flex gap-1">
-                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [slot]: 'accept' }))}>Accept</button>
-                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [slot]: 'skip' }))}>Skip</button>
+                      <button
+                        type="button"
+                        aria-pressed={decisions[slot] === 'accept'}
+                        className={`min-h-11 rounded-lg px-2 font-semibold ${decisions[slot] === 'accept' ? 'bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900' : ''}`}
+                        onClick={() => setDecisions((current) => ({ ...current, [slot]: 'accept' }))}
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={decisions[slot] === 'skip'}
+                        className={`min-h-11 rounded-lg px-2 font-semibold ${decisions[slot] === 'skip' ? 'bg-slate-900 text-white dark:bg-slate-200 dark:text-slate-900' : ''}`}
+                        onClick={() => setDecisions((current) => ({ ...current, [slot]: 'skip' }))}
+                      >
+                        Skip
+                      </button>
                     </span>
                   </div>
                 );

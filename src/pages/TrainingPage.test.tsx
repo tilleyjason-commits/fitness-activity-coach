@@ -483,6 +483,74 @@ describe('previous-session prefill', () => {
     renderTraining();
     expect(await screen.findByLabelText('Set 1 RIR 3')).toBeInTheDocument();
   });
+
+  it('does not record a finish decision from the previous workout', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    await screen.findByText('Bench Press');
+
+    await user.click(screen.getByRole('button', { name: /finish workout/i }));
+    await user.click(screen.getByRole('button', { name: 'Accept' }));
+    await user.click(screen.getByRole('button', { name: 'Finish' }));
+    await waitFor(() => expect(overloadMock.recordOverloadDecision).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: 'Workout' }));
+    await user.click(await screen.findByRole('button', { name: /repeat today's routine/i }));
+    await screen.findByText('Bench Press');
+    await user.click(screen.getByRole('button', { name: /finish workout/i }));
+    await user.click(screen.getByRole('button', { name: 'Finish' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: /finish workout/i })).not.toBeInTheDocument();
+    });
+    expect(repo.completeWorkout).toHaveBeenCalledTimes(2);
+    expect(overloadMock.recordOverloadDecision).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows which finish decision is selected', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    await screen.findByText('Bench Press');
+
+    await user.click(screen.getByRole('button', { name: /finish workout/i }));
+    const accept = screen.getByRole('button', { name: 'Accept' });
+    const skip = screen.getByRole('button', { name: 'Skip' });
+    expect(accept).toHaveAttribute('aria-pressed', 'false');
+    expect(skip).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(accept);
+    expect(accept).toHaveAttribute('aria-pressed', 'true');
+    expect(skip).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(skip);
+    expect(accept).toHaveAttribute('aria-pressed', 'false');
+    expect(skip).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps a finish decision when the sheet is closed and reopened', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    await screen.findByText('Bench Press');
+
+    await user.click(screen.getByRole('button', { name: /finish workout/i }));
+    await user.click(screen.getByRole('button', { name: 'Accept' }));
+    await user.click(screen.getByRole('button', { name: 'Keep going' }));
+    await user.click(screen.getByRole('button', { name: /finish workout/i }));
+
+    expect(screen.getByRole('button', { name: 'Accept' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Finish' }));
+
+    await waitFor(() => expect(overloadMock.recordOverloadDecision).toHaveBeenCalledTimes(1));
+    expect(overloadMock.recordOverloadDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ exerciseId: 'bench-press', decision: 'accept' }),
+    );
+  });
 });
 
 describe('duplicate exercise occurrences', () => {
