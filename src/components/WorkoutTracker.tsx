@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, ChevronDown, Dumbbell, History, Minus, Plus, TrendingUp, Trash2, X } from 'lucide-react';
 import type { CardioWorkoutExercise, WorkoutExercise } from '~/lib/types';
-import { pastSetForIndex, suggestNextSet, type PastSet } from '~/lib/workout-mappers';
+import { exerciseSlotKeys, pastSetForSlot, suggestNextSet, type PastSet } from '~/lib/workout-mappers';
 
 interface WorkoutTrackerProps {
   exercises: WorkoutExercise[];
@@ -11,8 +11,8 @@ interface WorkoutTrackerProps {
   onSetRir?: (exIdx: number, setIdx: number, rir: number | null) => void;
   onRemoveExercise: (exIdx: number) => void;
   onRemoveCardioExercise: (cardioIdx: number) => void;
-  /** Completed sets from the last session that logged each exercise, by exercise id. */
-  pastByExerciseId?: Record<string, PastSet[]>;
+  /** Completed working sets from the last session, keyed by exercise copy (`exerciseSlotKey`). */
+  pastBySlot?: Record<string, PastSet[]>;
 }
 
 interface ActiveSet {
@@ -28,21 +28,6 @@ const MAX_RIR = 10;
 function stepRir(current: number | null, delta: number): number {
   if (current === null) return DEFAULT_RIR;
   return Math.min(MAX_RIR, Math.max(0, current + delta));
-}
-
-/** Position among working sets (warm-ups excluded), or null for a warm-up. */
-function workingSetIndex(sets: { setType?: 'working' | 'warmup' }[], setIdx: number): number | null {
-  if (sets[setIdx]?.setType === 'warmup') return null;
-  return sets.slice(0, setIdx).filter((set) => set.setType !== 'warmup').length;
-}
-
-function pastSetForSlot(
-  past: PastSet[] | null,
-  sets: { setType?: 'working' | 'warmup' }[],
-  setIdx: number,
-): PastSet | null {
-  const working = workingSetIndex(sets, setIdx);
-  return working === null ? null : pastSetForIndex(past, working);
 }
 
 function describePastSet(past: PastSet): string {
@@ -64,8 +49,9 @@ export function WorkoutTracker({
   onSetRir,
   onRemoveExercise,
   onRemoveCardioExercise,
-  pastByExerciseId,
+  pastBySlot,
 }: WorkoutTrackerProps) {
+  const slotKeys = exerciseSlotKeys(exercises);
   const [activeSet, setActiveSet] = useState<ActiveSet | null>(null);
   const [reps, setReps] = useState(10);
   const [weight, setWeight] = useState(50);
@@ -110,7 +96,7 @@ export function WorkoutTracker({
   const activeReference =
     activeSet && activeExercise
       ? pastSetForSlot(
-          pastByExerciseId?.[activeExercise.exercise.id] ?? null,
+          pastBySlot?.[slotKeys[activeSet.exIdx]] ?? null,
           activeExercise.sets,
           activeSet.setIdx,
         )
@@ -125,7 +111,7 @@ export function WorkoutTracker({
         const allDone = completedCount === we.sets.length && we.sets.length > 0;
         const collapsed = allDone && !expandedDone.has(key);
         const nextSetIdx = we.sets.findIndex((s) => !s.completed);
-        const past = pastByExerciseId?.[we.exercise.id] ?? null;
+        const past = pastBySlot?.[slotKeys[exIdx]] ?? null;
         const reference = pastSetForSlot(
           past,
           we.sets,

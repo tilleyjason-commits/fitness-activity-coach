@@ -30,7 +30,7 @@ function makeExercise(overrides: Partial<WorkoutExercise> = {}): WorkoutExercise
 
 function renderTracker(
   exercises: WorkoutExercise[],
-  pastByExerciseId?: Record<string, { reps: number; weight: number; rir: number | null }[]>,
+  pastBySlot?: Record<string, { reps: number; weight: number; rir: number | null }[]>,
 ) {
   return render(
     <WorkoutTracker
@@ -39,7 +39,7 @@ function renderTracker(
       onLogSet={onLogSet}
       onRemoveExercise={onRemoveExercise}
       onRemoveCardioExercise={onRemoveCardioExercise}
-      pastByExerciseId={pastByExerciseId}
+      pastBySlot={pastBySlot}
     />,
   );
 }
@@ -112,7 +112,7 @@ describe('progressive-overload "beat last" chip', () => {
   it('shows a beat-last suggestion and applies it on tap', async () => {
     const user = userEvent.setup();
     renderTracker([makeExercise()], {
-      'leg-press': [{ reps: 10, weight: 90, rir: 2 }],
+      'leg-press#0': [{ reps: 10, weight: 90, rir: 2 }],
     });
 
     await user.click(screen.getByRole('button', { name: /edit set 1/i }));
@@ -129,7 +129,7 @@ describe('progressive-overload "beat last" chip', () => {
   it('suggests a weight step instead of another rep once last time hit failure', async () => {
     const user = userEvent.setup();
     renderTracker([makeExercise()], {
-      'leg-press': [{ reps: 10, weight: 90, rir: 0 }],
+      'leg-press#0': [{ reps: 10, weight: 90, rir: 0 }],
     });
 
     await user.click(screen.getByRole('button', { name: /edit set 1/i }));

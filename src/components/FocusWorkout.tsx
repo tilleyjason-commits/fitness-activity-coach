@@ -1,4 +1,4 @@
-import type { PastSet } from '~/lib/workout-mappers';
+import { exerciseSlotKey, pastSetForSlot, type PastSet } from '~/lib/workout-mappers';
 import type { WorkoutExercise } from '~/lib/types';
 import { logTypeLabel } from '~/lib/training-surface';
 
@@ -8,7 +8,8 @@ interface FocusWorkoutProps {
   onIndex: (index: number) => void;
   onLogSet: (exerciseIndex: number, setIndex: number, reps: number, weight: number, rir: number | null) => void;
   onNote: (exerciseIndex: number, note: string) => void;
-  pastByExerciseId: Record<string, PastSet[]>;
+  /** Prior working sets per exercise copy (`exerciseSlotKey`). */
+  pastBySlot: Record<string, PastSet[]>;
 }
 
 /** One exercise on screen. The list view stays available from the parent toggle. */
@@ -18,7 +19,7 @@ export function FocusWorkout({
   onIndex,
   onLogSet,
   onNote,
-  pastByExerciseId,
+  pastBySlot,
 }: FocusWorkoutProps) {
   const current = exercises[index];
   if (!current) {
@@ -27,7 +28,12 @@ export function FocusWorkout({
   const nextOpen = current.sets.findIndex((set) => !set.completed);
   const setIndex = nextOpen === -1 ? current.sets.length - 1 : nextOpen;
   const set = current.sets[setIndex];
-  const past = pastByExerciseId[current.exercise.id]?.[setIndex];
+  // Duplicate copies get their own prior session; the ordinal is the count of
+  // earlier copies in the workout, not the raw exercise index.
+  const occurrence = exercises.slice(0, index).filter((we) => we.exercise.id === current.exercise.id).length;
+  const past = pastBySlot[exerciseSlotKey(current.exercise.id, occurrence)] ?? null;
+  // Warm-ups have no working-set reference; working sets compare in order.
+  const pastSet = pastSetForSlot(past, current.sets, setIndex);
 
   return (
     <section className="card" aria-label="Current exercise">
@@ -59,10 +65,10 @@ export function FocusWorkout({
         {current.supersetGroup ? ` · Superset ${current.supersetGroup}` : ''}
         {current.restSeconds ? ` · ${current.restSeconds}s rest` : ''}
       </p>
-      {past && (
+      {pastSet && (
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Last time: {past.reps} × {past.weight} lb
-          {past.rir !== null ? ` · RIR ${past.rir}` : ''}
+          Last time: {pastSet.reps} × {pastSet.weight} lb
+          {pastSet.rir !== null ? ` · RIR ${pastSet.rir}` : ''}
         </p>
       )}
       {set && (

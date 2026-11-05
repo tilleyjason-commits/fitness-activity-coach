@@ -30,6 +30,20 @@ export function markExercisesPrefilled(userId: string, date: string, ids: Iterab
   }
 }
 
+/**
+ * Rewrite the marker set exactly (used when an exercise copy is removed and
+ * its marker must be dropped or moved to the surviving copy). Callers keep an
+ * in-memory copy of the guards too, so a storage failure degrades rather than
+ * reopening the overwrite.
+ */
+export function replacePrefilledExercises(userId: string, date: string, ids: Iterable<string>): void {
+  try {
+    localStorage.setItem(key(userId, date), JSON.stringify([...new Set(ids)]));
+  } catch {
+    // Storage failures must never block logging.
+  }
+}
+
 export function clearPrefilledExercises(userId: string, date: string): void {
   try {
     localStorage.removeItem(key(userId, date));

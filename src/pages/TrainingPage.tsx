@@ -47,8 +47,13 @@ import {
   applyPreviousSessionToWorkout,
   prefillExerciseFromPrevious,
   findLastPerformance,
+  exerciseOccurrenceAt,
+  exerciseSlotKey,
+  exerciseSlotKeys,
+  exerciseSlotRebaseAfterRemoval,
   getTodayWeekday,
   getWorkoutTotals,
+  isExercisePrefilled,
   replaceWorkoutWithRoutine,
   routineHasItems,
   setSetRir,
@@ -60,6 +65,7 @@ import {
   clearPrefilledExercises,
   markExercisesPrefilled,
   readPrefilledExerciseIds,
+  replacePrefilledExercises,
 } from '~/lib/previous-session-prefill';
 import { recordOverloadDecision } from '~/lib/plan-repo';
 import { buildScorecard, formatClock } from '~/lib/training-surface';
@@ -154,12 +160,15 @@ export default function TrainingPage() {
   // let late history overwrite edits during this mount.
   const prefilledExerciseIdsRef = useRef(new Set<string>());
   const pendingPrefillRef = useRef(new Map<string, string>());
-  const markPrefilled = useCallback((date: string, ids: Iterable<string>) => {
+  const markPrefilled = useCallback((date: string, keys: Iterable<string>) => {
     if (!user) return;
-    const values = [...ids];
-    for (const id of values) {
-      prefilledExerciseIdsRef.current.add(`${user.id}:${date}:${id}`);
-      pendingPrefillRef.current.delete(id);
+    const values = [...keys];
+    for (const key of values) {
+      prefilledExerciseIdsRef.current.add(`${user.id}:${date}:${key}`);
+      pendingPrefillRef.current.delete(key);
+      // A legacy bare-id marker covered every copy, so drop it entirely.
+      const hash = key.lastIndexOf('#');
+      if (hash > 0) pendingPrefillRef.current.delete(key.slice(0, hash));
     }
     markExercisesPrefilled(user.id, date, values);
   }, [user]);
@@ -247,7 +256,10 @@ export default function TrainingPage() {
         // Auto-populate the workout from today's routine preset — but never
         // after a completed workout: repeating a day is an explicit action.
         const seeded = replaceWorkoutWithRoutine(routinePreset, today);
-        pendingPrefillRef.current = new Map(seeded.exercises.map((we) => [we.exercise.id, JSON.stringify(we)]));
+        const seededSlots = exerciseSlotKeys(seeded.exercises);
+        pendingPrefillRef.current = new Map(
+          seeded.exercises.map((we, index) => [seededSlots[index], JSON.stringify(we)]),
+        );
         setWorkout(seeded);
         persistWorkoutDraft(user.id, seeded, pendingPrefillRef.current);
         dirtyRef.current = true;
@@ -256,8 +268,15 @@ export default function TrainingPage() {
         // prefill. Legacy drafts, cloud restores, and edited exercises win.
         pendingPrefillRef.current = restored && restored === draft
           ? readPendingWorkoutPrefill(user.id, restored) : new Map();
-        if (restored) markPrefilled(restored.date, restored.exercises
-          .map((we) => we.exercise.id).filter((id) => !pendingPrefillRef.current.has(id)));
+        if (restored) {
+          const pendingMarkers = new Set(pendingPrefillRef.current.keys());
+          markPrefilled(restored.date, exerciseSlotKeys(restored.exercises).filter((_slot, index) =>
+            !isExercisePrefilled(
+              pendingMarkers,
+              restored.exercises[index].exercise.id,
+              exerciseOccurrenceAt(restored.exercises, index),
+            )));
+        }
         setWorkout(restored);
         if (draft && restored === draft) {
           // Local edits beat a stale cloud snapshot; schedule a catch-up save.
@@ -346,7 +365,9 @@ export default function TrainingPage() {
     const next = routine
       ? replaceWorkoutWithRoutine(routine, today)
       : { exercises: [], cardioExercises: [], date: today };
-    pendingPrefillRef.current = new Map(next.exercises.map((we) => [we.exercise.id, JSON.stringify(we)]));
+    pendingPrefillRef.current = new Map(
+      exerciseSlotKeys(next.exercises).map((slot, index) => [slot, JSON.stringify(next.exercises[index])]),
+    );
     if (user) persistWorkoutDraft(user.id, next, pendingPrefillRef.current);
     setWorkout(next);
   }
@@ -354,22 +375,24 @@ export default function TrainingPage() {
   const addExercise = useCallback(
     (exercise: Exercise, sets: number, reps: number, weight: number) => {
       // History loaded: apply last session's values now and record it. Not
-      // loaded yet: leave the id unmarked so the effect below fills it in.
+      // loaded yet: leave the copy unmarked so the effect below fills it in.
+      // Duplicates resolve by occurrence, not by exercise id.
       const historyReady = !historyLoading && !historyError;
-      if (historyReady) markPrefilled(today, [exercise.id]);
-      mutateWorkout((current) => {
-        const created = createWorkoutExercise(exercise, sets, reps, weight);
-        if (!historyReady) pendingPrefillRef.current.set(exercise.id, JSON.stringify(created));
-        return {
-          ...current,
-          exercises: [
-            ...current.exercises,
-            historyReady ? prefillExerciseFromPrevious(created, history, current.date) : created,
-          ],
-        };
-      });
+      const created = createWorkoutExercise(exercise, sets, reps, weight);
+      const occurrence = workout
+        ? workout.exercises.filter((we) => we.exercise.id === exercise.id).length : 0;
+      const slot = exerciseSlotKey(exercise.id, occurrence);
+      if (historyReady) markPrefilled(today, [slot]);
+      else pendingPrefillRef.current.set(slot, JSON.stringify(created));
+      mutateWorkout((current) => ({
+        ...current,
+        exercises: [
+          ...current.exercises,
+          historyReady ? prefillExerciseFromPrevious(created, history, current.date, occurrence) : created,
+        ],
+      }));
     },
-    [mutateWorkout, markPrefilled, today, history, historyLoading, historyError],
+    [mutateWorkout, markPrefilled, today, history, historyLoading, historyError, workout],
   );
 
   const addCardio = useCallback(
@@ -414,25 +437,43 @@ export default function TrainingPage() {
 
   const changeSetRir = useCallback(
     (exIdx: number, setIdx: number, rir: number | null) => {
-      const exerciseId = workout?.exercises[exIdx]?.exercise.id;
-      if (exerciseId && workout) markPrefilled(workout.date, [exerciseId]);
+      const slot = workout ? exerciseSlotKeys(workout.exercises)[exIdx] : undefined;
+      if (slot && workout) markPrefilled(workout.date, [slot]);
       mutateWorkout((current) => setSetRir(current, exIdx, setIdx, rir));
     },
     [mutateWorkout, workout, markPrefilled],
   );
 
-  // Overload reference per exercise, read from the history already loaded for
-  // the History tab — no extra round trip.
+  // Overload reference per slot, read from the history already loaded for the
+  // History tab — no extra round trip. Each duplicate copy reads its own
+  // occurrence so the second Bench does not inherit the first one's numbers.
+  const pastBySlot = useMemo(() => {
+    const map: Record<string, PastSet[]> = {};
+    if (!workout) return map;
+    const slots = exerciseSlotKeys(workout.exercises);
+    workout.exercises.forEach((we, index) => {
+      const past = findLastPerformance(
+        history,
+        we.exercise.id,
+        today,
+        exerciseOccurrenceAt(workout.exercises, index),
+      );
+      if (past) map[slots[index]] = past;
+    });
+    return map;
+  }, [workout, history, today]);
+
+  // Exercise-id view kept for the volume scorecard's prior-best reference.
   const pastByExerciseId = useMemo(() => {
     const map: Record<string, PastSet[]> = {};
     if (!workout) return map;
-    for (const we of workout.exercises) {
-      if (map[we.exercise.id]) continue;
-      const past = findLastPerformance(history, we.exercise.id, today);
-      if (past) map[we.exercise.id] = past;
-    }
+    exerciseSlotKeys(workout.exercises).forEach((slot, index) => {
+      const past = pastBySlot[slot];
+      const exerciseId = workout.exercises[index].exercise.id;
+      if (past && !map[exerciseId]) map[exerciseId] = past;
+    });
     return map;
-  }, [workout, history, today]);
+  }, [workout, pastBySlot]);
 
   // Pre-fill a fresh routine or manual add once history is available.
   // Restored snapshots and exercises the user has edited are authoritative;
@@ -440,10 +481,13 @@ export default function TrainingPage() {
   useEffect(() => {
     if (!user || !workout || loading || historyLoading || historyError) return;
     const done = readPrefilledExerciseIds(user.id, workout.date);
-    const pending = new Set(
-      workout.exercises.map((we) => we.exercise.id).filter((id) =>
-        !done.has(id) && !prefilledExerciseIdsRef.current.has(`${user.id}:${workout.date}:${id}`)),
-    );
+    const slots = exerciseSlotKeys(workout.exercises);
+    const pending = new Set(slots.filter((slot, index) => {
+      const we = workout.exercises[index];
+      return !isExercisePrefilled(done, we.exercise.id, exerciseOccurrenceAt(workout.exercises, index)) &&
+        !prefilledExerciseIdsRef.current.has(`${user.id}:${workout.date}:${slot}`) &&
+        !prefilledExerciseIdsRef.current.has(`${user.id}:${workout.date}:${we.exercise.id}`);
+    }));
     if (pending.size === 0) return;
     markPrefilled(workout.date, pending);
     const next = applyPreviousSessionToWorkout(workout, history, pending);
@@ -452,12 +496,41 @@ export default function TrainingPage() {
 
   const removeExercise = useCallback(
     (exIdx: number) => {
+      // Removing one copy renumbers the later copies of the same exercise
+      // (bench#1 -> bench#0). Move the prefill guards and machine-created
+      // provenance with them, and drop the removed copy's own guard: otherwise
+      // delayed history overwrites the survivor or a stale guard suppresses an
+      // untouched copy that inherited occurrence 0.
+      const rebase = workout ? exerciseSlotRebaseAfterRemoval(workout.exercises, exIdx) : null;
+      if (rebase && user && workout) {
+        const base = `${user.id}:${workout.date}:`;
+        const guards = prefilledExerciseIdsRef.current;
+        guards.delete(`${base}${rebase.removedSlot}`);
+        for (const { from, to } of rebase.moves) {
+          if (guards.delete(`${base}${from}`)) guards.add(`${base}${to}`);
+        }
+
+        pendingPrefillRef.current.delete(rebase.removedSlot);
+        for (const { from, to } of rebase.moves) {
+          const fingerprint = pendingPrefillRef.current.get(from);
+          if (fingerprint === undefined) continue;
+          pendingPrefillRef.current.delete(from);
+          pendingPrefillRef.current.set(to, fingerprint);
+        }
+
+        const done = readPrefilledExerciseIds(user.id, workout.date);
+        done.delete(rebase.removedSlot);
+        for (const { from, to } of rebase.moves) {
+          if (done.delete(from)) done.add(to);
+        }
+        replacePrefilledExercises(user.id, workout.date, done);
+      }
       mutateWorkout((current) => ({
         ...current,
         exercises: current.exercises.filter((_, i) => i !== exIdx),
       }));
     },
-    [mutateWorkout],
+    [mutateWorkout, user, workout],
   );
 
   const removeCardio = useCallback(
@@ -486,9 +559,21 @@ export default function TrainingPage() {
         restSeconds: restSecondsRef.current,
         exertion,
       });
+      // overload_decisions is unique per (user, exercise, date): when both
+      // copies of a duplicated exercise were accepted, keep the first copy's
+      // decision instead of racing a second upsert.
+      const slots = exerciseSlotKeys(workout.exercises);
+      const accepted = new Map<string, { slot: string; decision: 'accept' | 'skip' }>();
+      workout.exercises.forEach((we, index) => {
+        const slot = slots[index];
+        const decision = decisions[slot];
+        if (decision && !accepted.has(we.exercise.id)) {
+          accepted.set(we.exercise.id, { slot, decision });
+        }
+      });
       await Promise.all(
-        Object.entries(decisions).map(([exerciseId, decision]) => {
-          const suggestion = suggestNextSet(pastByExerciseId[exerciseId]?.[0] ?? null);
+        [...accepted].map(([exerciseId, { slot, decision }]) => {
+          const suggestion = suggestNextSet(pastBySlot[slot]?.[0] ?? null);
           return recordOverloadDecision({
             userId: user.id,
             exerciseId,
@@ -667,7 +752,7 @@ export default function TrainingPage() {
                 ...current,
                 exercises: current.exercises.map((exercise, index) => index === exerciseIndex ? { ...exercise, notes: note } : exercise),
               }))}
-              pastByExerciseId={pastByExerciseId}
+              pastBySlot={pastBySlot}
             />
           ) : (
           <WorkoutTracker
@@ -677,7 +762,7 @@ export default function TrainingPage() {
             onSetRir={changeSetRir}
             onRemoveExercise={removeExercise}
             onRemoveCardioExercise={removeCardio}
-            pastByExerciseId={pastByExerciseId}
+            pastBySlot={pastBySlot}
           />
           )}
 
@@ -742,15 +827,26 @@ export default function TrainingPage() {
               <input className="field" type="range" min={1} max={10} value={exertion} onChange={(e) => setExertion(Number(e.target.value))} />
             </label>
             <div className="mb-4 space-y-2 text-left">
-              {workout.exercises.map((exercise) => {
-                const suggestion = suggestNextSet(pastByExerciseId[exercise.exercise.id]?.[0] ?? null);
+              {workout.exercises.map((exercise, index) => {
+                const slot = exerciseSlotKeys(workout.exercises)[index];
+                const firstCopy = workout.exercises.findIndex((item) => item.exercise.id === exercise.exercise.id);
+                if (firstCopy !== index) return null;
+                const suggestion = suggestNextSet(pastBySlot[slot]?.[0] ?? null);
                 if (!suggestion) return null;
+                const copies = workout.exercises.filter((item) => item.exercise.id === exercise.exercise.id).length;
                 return (
-                  <div key={exercise.exercise.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span>{exercise.exercise.name}: {suggestion.reps} × {suggestion.weight}</span>
+                  <div key={slot} className="flex items-center justify-between gap-2 text-sm">
+                    <span>
+                      {exercise.exercise.name}: {suggestion.reps} × {suggestion.weight}
+                      {copies > 1 && (
+                        <span className="block text-xs text-slate-500 dark:text-slate-400">
+                          From the first copy. Applies to all {copies} copies.
+                        </span>
+                      )}
+                    </span>
                     <span className="flex gap-1">
-                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [exercise.exercise.id]: 'accept' }))}>Accept</button>
-                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [exercise.exercise.id]: 'skip' }))}>Skip</button>
+                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [slot]: 'accept' }))}>Accept</button>
+                      <button type="button" className="min-h-11 rounded-lg px-2 font-semibold" onClick={() => setDecisions((current) => ({ ...current, [slot]: 'skip' }))}>Skip</button>
                     </span>
                   </div>
                 );

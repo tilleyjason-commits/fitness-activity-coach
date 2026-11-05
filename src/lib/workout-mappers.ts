@@ -113,24 +113,114 @@ export interface PastSet {
 }
 
 /**
- * Completed sets for an exercise from the most recent earlier session that
- * logged it. History arrives newest-first; sessions on or after the current
- * date are skipped so an in-progress day never compares against itself.
+ * Completed sets for one exercise copy from the most recent earlier session
+ * that logged it. History arrives newest-first; sessions on or after the
+ * current date are skipped so an in-progress day never compares against
+ * itself.
+ *
+ * `occurrence` selects among repeated ids in a session (0 = first copy,
+ * 1 = second copy, …), so a top set is compared with the previous top set and
+ * a back-off set with the previous back-off set. When the newest session that
+ * logged the exercise has no such copy, there is no reference: it does not
+ * borrow an older session's copy or the first copy's numbers.
  */
 export function findLastPerformance(
   history: WorkoutHistoryEntry[],
   exerciseId: string,
   currentDate: string,
+  occurrence = 0,
 ): PastSet[] | null {
   for (const entry of history) {
     if (entry.date >= currentDate) continue;
-    const match = entry.exercises.find((we) => we.exercise.id === exerciseId);
-    if (!match) continue;
+    const matches = entry.exercises.filter((we) => we.exercise.id === exerciseId);
+    if (matches.length === 0) continue;
+    const match = matches[occurrence];
+    if (!match) return null;
     const completed = match.sets.filter((set) => set.completed && set.setType !== 'warmup');
-    if (completed.length === 0) continue;
+    // The newest session that contains this copy is authoritative. Warm-ups or
+    // unfinished sets there do not authorize borrowing an older session.
+    if (completed.length === 0) return null;
     return completed.map((set) => ({ reps: set.reps, weight: set.weight, rir: set.rir }));
   }
   return null;
+}
+
+/**
+ * Stable reference to one exercise copy inside a workout: its id plus the
+ * ordinal among earlier copies of the same id. Used for history lookups and
+ * for prefill provenance, so two copies of one exercise never share guidance.
+ */
+export function exerciseSlotKey(exerciseId: string, occurrence: number): string {
+  return `${exerciseId}#${occurrence}`;
+}
+
+/** Slot key for every exercise in order (duplicates qualified by occurrence). */
+export function exerciseSlotKeys(exercises: readonly { exercise: { id: string } }[]): string[] {
+  const seen = new Map<string, number>();
+  return exercises.map((workoutExercise) => {
+    const occurrence = seen.get(workoutExercise.exercise.id) ?? 0;
+    seen.set(workoutExercise.exercise.id, occurrence + 1);
+    return exerciseSlotKey(workoutExercise.exercise.id, occurrence);
+  });
+}
+
+/** Ordinal of the copy at `index` among earlier copies of the same exercise. */
+export function exerciseOccurrenceAt(
+  exercises: readonly { exercise: { id: string } }[],
+  index: number,
+): number {
+  const exerciseId = exercises[index]?.exercise.id;
+  if (exerciseId === undefined) return 0;
+  let occurrence = 0;
+  for (let i = 0; i < index; i += 1) {
+    if (exercises[i].exercise.id === exerciseId) occurrence += 1;
+  }
+  return occurrence;
+}
+
+/**
+ * Slot-key changes caused by deleting one exercise copy. The removed copy's
+ * slot goes away, and every later copy of the same exercise shifts down one
+ * occurrence (bench#1 becomes bench#0 after the first copy is removed).
+ * Callers move any marker or provenance stored under `from` to `to`, so a
+ * guard on the surviving copy is not lost or handed to the wrong copy.
+ */
+export function exerciseSlotRebaseAfterRemoval(
+  exercises: readonly { exercise: { id: string } }[],
+  removedIndex: number,
+): { removedSlot: string; moves: Array<{ from: string; to: string }> } | null {
+  const removed = exercises[removedIndex];
+  if (!removed) return null;
+  const exerciseId = removed.exercise.id;
+  const removedOccurrence = exerciseOccurrenceAt(exercises, removedIndex);
+  const moves: Array<{ from: string; to: string }> = [];
+  let occurrence = 0;
+  exercises.forEach((workoutExercise, index) => {
+    if (workoutExercise.exercise.id !== exerciseId) return;
+    const oldOccurrence = occurrence;
+    occurrence += 1;
+    if (index === removedIndex) return;
+    if (oldOccurrence > removedOccurrence) {
+      moves.push({
+        from: exerciseSlotKey(exerciseId, oldOccurrence),
+        to: exerciseSlotKey(exerciseId, oldOccurrence - 1),
+      });
+    }
+  });
+  return { removedSlot: exerciseSlotKey(exerciseId, removedOccurrence), moves };
+}
+
+/**
+ * Whether a stored prefill marker already covers this exercise copy. Markers
+ * written before duplicate support are bare exercise ids and covered every
+ * copy, so a bare id still protects each occurrence.
+ */
+export function isExercisePrefilled(
+  markers: ReadonlySet<string>,
+  exerciseId: string,
+  occurrence: number,
+): boolean {
+  return markers.has(exerciseSlotKey(exerciseId, occurrence)) || markers.has(exerciseId);
 }
 
 /**
@@ -141,6 +231,28 @@ export function findLastPerformance(
 export function pastSetForIndex(past: PastSet[] | null, setIndex: number): PastSet | null {
   if (past === null) return null;
   return past[setIndex] ?? null;
+}
+
+/** Position among working sets (warm-ups excluded), or null for a warm-up. */
+export function workingSetIndex(
+  sets: { setType?: 'working' | 'warmup' }[],
+  setIndex: number,
+): number | null {
+  if (sets[setIndex]?.setType === 'warmup') return null;
+  return sets.slice(0, setIndex).filter((set) => set.setType !== 'warmup').length;
+}
+
+/**
+ * The prior-session reference for one slot: warm-ups never compare against a
+ * working set, and working sets compare in working-set order.
+ */
+export function pastSetForSlot(
+  past: PastSet[] | null,
+  sets: { setType?: 'working' | 'warmup' }[],
+  setIndex: number,
+): PastSet | null {
+  const working = workingSetIndex(sets, setIndex);
+  return working === null ? null : pastSetForIndex(past, working);
 }
 
 /**
@@ -155,12 +267,13 @@ export function prefillExerciseFromPrevious(
   workoutExercise: WorkoutExercise,
   history: WorkoutHistoryEntry[],
   currentDate: string,
+  occurrence = 0,
 ): WorkoutExercise {
   if (workoutExercise.logType === 'duration' || workoutExercise.logType === 'reps_duration') {
     return workoutExercise;
   }
   if (workoutExercise.sets.some((set) => set.completed)) return workoutExercise;
-  const past = findLastPerformance(history, workoutExercise.exercise.id, currentDate);
+  const past = findLastPerformance(history, workoutExercise.exercise.id, currentDate, occurrence);
   if (!past) return workoutExercise;
 
   let workingOrdinal = 0;
@@ -182,16 +295,28 @@ export function prefillExerciseFromPrevious(
   return changed ? { ...workoutExercise, sets } : workoutExercise;
 }
 
-/** Prefill every exercise whose id is in `exerciseIds` (see prefillExerciseFromPrevious). */
+/**
+ * Prefill the exercise copies selected by slot key (see exerciseSlotKey).
+ * A bare exercise id selects only its first copy — legacy callers used ids
+ * before duplicates were distinguished, and guessing that the rest were meant
+ * too would overwrite a copy the user had already adjusted.
+ */
 export function applyPreviousSessionToWorkout(
   workout: WorkoutState,
   history: WorkoutHistoryEntry[],
-  exerciseIds: ReadonlySet<string>,
+  exerciseSlots: ReadonlySet<string>,
 ): WorkoutState {
   let changed = false;
+  const seen = new Map<string, number>();
   const exercises = workout.exercises.map((workoutExercise) => {
-    if (!exerciseIds.has(workoutExercise.exercise.id)) return workoutExercise;
-    const next = prefillExerciseFromPrevious(workoutExercise, history, workout.date);
+    const exerciseId = workoutExercise.exercise.id;
+    const occurrence = seen.get(exerciseId) ?? 0;
+    seen.set(exerciseId, occurrence + 1);
+    const selected =
+      exerciseSlots.has(exerciseSlotKey(exerciseId, occurrence)) ||
+      (occurrence === 0 && exerciseSlots.has(exerciseId));
+    if (!selected) return workoutExercise;
+    const next = prefillExerciseFromPrevious(workoutExercise, history, workout.date, occurrence);
     if (next !== workoutExercise) changed = true;
     return next;
   });
