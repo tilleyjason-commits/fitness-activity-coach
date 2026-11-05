@@ -23,9 +23,20 @@ function isWorkoutState(value: unknown): value is WorkoutState {
   );
 }
 
-export function persistWorkoutDraft(userId: string, workout: WorkoutState): void {
+export function persistWorkoutDraft(
+  userId: string,
+  workout: WorkoutState,
+  pendingPrefill: ReadonlyMap<string, string> = new Map(),
+): void {
   try {
-    localStorage.setItem(workoutDraftKey(userId), JSON.stringify(workout));
+    // Local-only provenance, saved atomically with the exact snapshot. Only
+    // unchanged machine-created exercises remain eligible after a remount.
+    const pending = Object.fromEntries(workout.exercises.flatMap((we) => {
+      const fingerprint = pendingPrefill.get(we.exercise.id);
+      return fingerprint === JSON.stringify(we) ? [[we.exercise.id, fingerprint]] : [];
+    }));
+    const record = Object.keys(pending).length > 0 ? { ...workout, __pendingPrefill: pending } : workout;
+    localStorage.setItem(workoutDraftKey(userId), JSON.stringify(record));
   } catch {
     // Quota / private-mode failures must never block logging a set.
   }
@@ -37,9 +48,27 @@ export function readWorkoutDraft(userId: string, date: string): WorkoutState | n
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!isWorkoutState(parsed) || parsed.date !== date) return null;
-    return parsed;
+    const workout = { ...parsed } as WorkoutState & { __pendingPrefill?: unknown };
+    delete workout.__pendingPrefill; // Never send local provenance to cloud saves.
+    return workout;
   } catch {
     return null;
+  }
+}
+
+export function readPendingWorkoutPrefill(userId: string, workout: WorkoutState): Map<string, string> {
+  try {
+    const raw: unknown = JSON.parse(localStorage.getItem(workoutDraftKey(userId)) ?? 'null');
+    if (!isWorkoutState(raw) || raw.date !== workout.date) return new Map();
+    const pending = (raw as WorkoutState & { __pendingPrefill?: unknown }).__pendingPrefill;
+    if (!pending || typeof pending !== 'object' || Array.isArray(pending)) return new Map();
+    return new Map(workout.exercises.flatMap((we) => {
+      const fingerprint = (pending as Record<string, unknown>)[we.exercise.id];
+      return typeof fingerprint === 'string' && fingerprint === JSON.stringify(we)
+        ? [[we.exercise.id, fingerprint] as const] : [];
+    }));
+  } catch {
+    return new Map();
   }
 }
 

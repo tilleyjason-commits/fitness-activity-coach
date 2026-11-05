@@ -30,6 +30,21 @@ function stepRir(current: number | null, delta: number): number {
   return Math.min(MAX_RIR, Math.max(0, current + delta));
 }
 
+/** Position among working sets (warm-ups excluded), or null for a warm-up. */
+function workingSetIndex(sets: { setType?: 'working' | 'warmup' }[], setIdx: number): number | null {
+  if (sets[setIdx]?.setType === 'warmup') return null;
+  return sets.slice(0, setIdx).filter((set) => set.setType !== 'warmup').length;
+}
+
+function pastSetForSlot(
+  past: PastSet[] | null,
+  sets: { setType?: 'working' | 'warmup' }[],
+  setIdx: number,
+): PastSet | null {
+  const working = workingSetIndex(sets, setIdx);
+  return working === null ? null : pastSetForIndex(past, working);
+}
+
 function describePastSet(past: PastSet): string {
   const rir = past.rir === null ? '' : ` · RIR ${past.rir}`;
   return `${past.reps} × ${past.weight} lb${rir}`;
@@ -94,7 +109,11 @@ export function WorkoutTracker({
   const activeExercise = activeSet ? exercises[activeSet.exIdx] : null;
   const activeReference =
     activeSet && activeExercise
-      ? pastSetForIndex(pastByExerciseId?.[activeExercise.exercise.id] ?? null, activeSet.setIdx)
+      ? pastSetForSlot(
+          pastByExerciseId?.[activeExercise.exercise.id] ?? null,
+          activeExercise.sets,
+          activeSet.setIdx,
+        )
       : null;
   const overloadSuggestion = suggestNextSet(activeReference);
 
@@ -107,7 +126,11 @@ export function WorkoutTracker({
         const collapsed = allDone && !expandedDone.has(key);
         const nextSetIdx = we.sets.findIndex((s) => !s.completed);
         const past = pastByExerciseId?.[we.exercise.id] ?? null;
-        const reference = pastSetForIndex(past, nextSetIdx === -1 ? we.sets.length - 1 : nextSetIdx);
+        const reference = pastSetForSlot(
+          past,
+          we.sets,
+          nextSetIdx === -1 ? we.sets.length - 1 : nextSetIdx,
+        );
 
         if (collapsed) {
           return (

@@ -38,11 +38,14 @@ import {
   clearWorkoutDraft,
   persistWorkoutDraft,
   readWorkoutDraft,
+  readPendingWorkoutPrefill,
 } from '~/lib/workout-draft';
 import {
   applyCompletedSetToRoutine,
   createCardioWorkoutExercise,
   createWorkoutExercise,
+  applyPreviousSessionToWorkout,
+  prefillExerciseFromPrevious,
   findLastPerformance,
   getTodayWeekday,
   getWorkoutTotals,
@@ -53,6 +56,11 @@ import {
   updateSetRecord,
   type PastSet,
 } from '~/lib/workout-mappers';
+import {
+  clearPrefilledExercises,
+  markExercisesPrefilled,
+  readPrefilledExerciseIds,
+} from '~/lib/previous-session-prefill';
 import { recordOverloadDecision } from '~/lib/plan-repo';
 import { buildScorecard, formatClock } from '~/lib/training-surface';
 import type {
@@ -142,6 +150,19 @@ export default function TrainingPage() {
   // StrictMode can overlap mount loads. Only the newest request may publish
   // state, and starting a workout invalidates any request still in flight.
   const loadWorkoutRequestRef = useRef(0);
+  // Keep the guard in memory too: denied/quota-limited localStorage must not
+  // let late history overwrite edits during this mount.
+  const prefilledExerciseIdsRef = useRef(new Set<string>());
+  const pendingPrefillRef = useRef(new Map<string, string>());
+  const markPrefilled = useCallback((date: string, ids: Iterable<string>) => {
+    if (!user) return;
+    const values = [...ids];
+    for (const id of values) {
+      prefilledExerciseIdsRef.current.add(`${user.id}:${date}:${id}`);
+      pendingPrefillRef.current.delete(id);
+    }
+    markExercisesPrefilled(user.id, date, values);
+  }, [user]);
 
   // Single-flight coalescing autosave: one save in flight, newest snapshot
   // wins, stale completions ignored (see src/lib/autosave.ts).
@@ -226,10 +247,17 @@ export default function TrainingPage() {
         // Auto-populate the workout from today's routine preset — but never
         // after a completed workout: repeating a day is an explicit action.
         const seeded = replaceWorkoutWithRoutine(routinePreset, today);
+        pendingPrefillRef.current = new Map(seeded.exercises.map((we) => [we.exercise.id, JSON.stringify(we)]));
         setWorkout(seeded);
-        persistWorkoutDraft(user.id, seeded);
+        persistWorkoutDraft(user.id, seeded, pendingPrefillRef.current);
         dirtyRef.current = true;
       } else {
+        // Only exact, locally tracked machine-created snapshots may still
+        // prefill. Legacy drafts, cloud restores, and edited exercises win.
+        pendingPrefillRef.current = restored && restored === draft
+          ? readPendingWorkoutPrefill(user.id, restored) : new Map();
+        if (restored) markPrefilled(restored.date, restored.exercises
+          .map((we) => we.exercise.id).filter((id) => !pendingPrefillRef.current.has(id)));
         setWorkout(restored);
         if (draft && restored === draft) {
           // Local edits beat a stale cloud snapshot; schedule a catch-up save.
@@ -242,7 +270,7 @@ export default function TrainingPage() {
     } finally {
       if (requestId === loadWorkoutRequestRef.current) setLoading(false);
     }
-  }, [user, today]);
+  }, [user, today, markPrefilled]);
 
   const loadHistory = useCallback(async () => {
     if (!user) return;
@@ -266,7 +294,7 @@ export default function TrainingPage() {
   // and serializes the actual saves.
   useEffect(() => {
     if (!user || !workout || !dirtyRef.current) return;
-    persistWorkoutDraft(user.id, workout);
+    persistWorkoutDraft(user.id, workout, pendingPrefillRef.current);
     dirtyRef.current = false;
     autosaveRef.current?.schedule(workout);
   }, [user, workout]);
@@ -276,7 +304,7 @@ export default function TrainingPage() {
   useEffect(() => {
     if (!user) return;
     const persistNow = () => {
-      if (workout) persistWorkoutDraft(user.id, workout);
+      if (workout) persistWorkoutDraft(user.id, workout, pendingPrefillRef.current);
       void autosaveRef.current?.flush();
       void routineAutosaveRef.current?.flush();
     };
@@ -302,7 +330,7 @@ export default function TrainingPage() {
     setWorkout((prev) => {
       if (!prev) return prev;
       const next = updater(prev);
-      if (user) persistWorkoutDraft(user.id, next);
+      if (user) persistWorkoutDraft(user.id, next, pendingPrefillRef.current);
       return next;
     });
   }, [user]);
@@ -312,21 +340,36 @@ export default function TrainingPage() {
     setSaveError(null);
     setShowSelector(false);
     dirtyRef.current = true;
+    // A brand-new workout is eligible for the previous-session prefill again.
+    prefilledExerciseIdsRef.current.clear();
+    if (user) clearPrefilledExercises(user.id, today);
     const next = routine
       ? replaceWorkoutWithRoutine(routine, today)
       : { exercises: [], cardioExercises: [], date: today };
-    if (user) persistWorkoutDraft(user.id, next);
+    pendingPrefillRef.current = new Map(next.exercises.map((we) => [we.exercise.id, JSON.stringify(we)]));
+    if (user) persistWorkoutDraft(user.id, next, pendingPrefillRef.current);
     setWorkout(next);
   }
 
   const addExercise = useCallback(
     (exercise: Exercise, sets: number, reps: number, weight: number) => {
-      mutateWorkout((current) => ({
-        ...current,
-        exercises: [...current.exercises, createWorkoutExercise(exercise, sets, reps, weight)],
-      }));
+      // History loaded: apply last session's values now and record it. Not
+      // loaded yet: leave the id unmarked so the effect below fills it in.
+      const historyReady = !historyLoading && !historyError;
+      if (historyReady) markPrefilled(today, [exercise.id]);
+      mutateWorkout((current) => {
+        const created = createWorkoutExercise(exercise, sets, reps, weight);
+        if (!historyReady) pendingPrefillRef.current.set(exercise.id, JSON.stringify(created));
+        return {
+          ...current,
+          exercises: [
+            ...current.exercises,
+            historyReady ? prefillExerciseFromPrevious(created, history, current.date) : created,
+          ],
+        };
+      });
     },
-    [mutateWorkout],
+    [mutateWorkout, markPrefilled, today, history, historyLoading, historyError],
   );
 
   const addCardio = useCallback(
@@ -371,9 +414,11 @@ export default function TrainingPage() {
 
   const changeSetRir = useCallback(
     (exIdx: number, setIdx: number, rir: number | null) => {
+      const exerciseId = workout?.exercises[exIdx]?.exercise.id;
+      if (exerciseId && workout) markPrefilled(workout.date, [exerciseId]);
       mutateWorkout((current) => setSetRir(current, exIdx, setIdx, rir));
     },
-    [mutateWorkout],
+    [mutateWorkout, workout, markPrefilled],
   );
 
   // Overload reference per exercise, read from the history already loaded for
@@ -388,6 +433,22 @@ export default function TrainingPage() {
     }
     return map;
   }, [workout, history, today]);
+
+  // Pre-fill a fresh routine or manual add once history is available.
+  // Restored snapshots and exercises the user has edited are authoritative;
+  // neither persistent nor in-memory guards depend on a completed set.
+  useEffect(() => {
+    if (!user || !workout || loading || historyLoading || historyError) return;
+    const done = readPrefilledExerciseIds(user.id, workout.date);
+    const pending = new Set(
+      workout.exercises.map((we) => we.exercise.id).filter((id) =>
+        !done.has(id) && !prefilledExerciseIdsRef.current.has(`${user.id}:${workout.date}:${id}`)),
+    );
+    if (pending.size === 0) return;
+    markPrefilled(workout.date, pending);
+    const next = applyPreviousSessionToWorkout(workout, history, pending);
+    if (next !== workout) mutateWorkout((current) => applyPreviousSessionToWorkout(current, history, pending));
+  }, [user, workout, history, loading, historyLoading, historyError, mutateWorkout, markPrefilled]);
 
   const removeExercise = useCallback(
     (exIdx: number) => {
@@ -442,6 +503,7 @@ export default function TrainingPage() {
       // replay stale state and recreate an active workout for this date.
       dequeueWorkoutSave(user.id, today);
       clearWorkoutDraft(user.id);
+      clearPrefilledExercises(user.id, today);
       clearPersistedTimer();
       setWorkout(null);
       setCompletedToday(true);

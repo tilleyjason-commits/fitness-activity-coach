@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { format } from 'date-fns';
 import { MemoryRouter } from 'react-router-dom';
 import TrainingPage from '~/pages/TrainingPage';
 import RoutinesPage from '~/pages/RoutinesPage';
@@ -320,5 +321,159 @@ describe('routine target carry-forward after a completed set', () => {
     await user.click(await screen.findByRole('button', { name: 'Start Blank Workout' }));
     expect(await screen.findByRole('region', { name: 'Add Exercise' })).toBeVisible();
     expect(repo.saveRoutine).not.toHaveBeenCalled();
+  });
+});
+
+describe('previous-session prefill', () => {
+  it('preserves an RIR edit made before delayed history resolves', async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (value: ReturnType<typeof lastSession>[]) => void;
+    repo.getWorkoutHistory.mockImplementationOnce(() => new Promise((resolve) => { resolveHistory = resolve; }));
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    renderTraining();
+    await screen.findByText('Bench Press');
+    await user.click(screen.getByLabelText('Increase RIR for set 1'));
+    await user.click(screen.getByLabelText('Increase RIR for set 1'));
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    await act(async () => { resolveHistory([lastSession()]); });
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+  });
+
+  it('preserves restored uncompleted draft edits when its marker is absent', async () => {
+    const draft = lastSession();
+    draft.date = format(new Date(), 'yyyy-MM-dd');
+    draft.exercises[0].sets = [
+      { reps: 6, weight: 150, rir: 4, completed: false },
+      { reps: 6, weight: 150, rir: 4, completed: false },
+    ];
+    localStorage.setItem('fac-workout-draft-v1:user-abc', JSON.stringify(draft));
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    await screen.findByText('Bench Press');
+    expect(screen.getAllByText('6 × 150 lb')).toHaveLength(2);
+    expect(screen.getByLabelText('Set 1 RIR 4')).toBeInTheDocument();
+  });
+  it('preserves an uncompleted cloud workout without a local marker', async () => {
+    const cloud = lastSession();
+    cloud.date = format(new Date(), 'yyyy-MM-dd');
+    cloud.exercises[0].sets = [{ reps: 6, weight: 150, rir: 4, completed: false }];
+    repo.getActiveWorkout.mockResolvedValue(cloud);
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    expect(await screen.findByText('6 × 150 lb')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 1 RIR 4')).toBeInTheDocument();
+  });
+
+  it('still prefills an untouched auto-saved routine after leaving and reopening', async () => {
+    repo.getWorkoutHistory.mockImplementationOnce(() => new Promise(() => {}));
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    const first = renderTraining();
+    await screen.findByText('Bench Press');
+    expect(screen.getAllByText('8 × 185 lb')).toHaveLength(3);
+    first.unmount();
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    expect(await screen.findByText('9 × 195 lb')).toBeInTheDocument();
+  });
+
+  it('protects an edited pending seed after reopening even if its marker is lost', async () => {
+    const user = userEvent.setup();
+    repo.getWorkoutHistory.mockImplementationOnce(() => new Promise(() => {}));
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    const first = renderTraining();
+    await screen.findByText('Bench Press');
+    await user.click(screen.getByLabelText('Increase RIR for set 1'));
+    await user.click(screen.getByLabelText('Increase RIR for set 1'));
+    first.unmount();
+    localStorage.removeItem(`fac-prefilled-v1:user-abc:${format(new Date(), 'yyyy-MM-dd')}`);
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+    expect(await screen.findByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    expect(screen.getAllByText('8 × 185 lb')).toHaveLength(3);
+  });
+
+  it('still fills an untouched routine when history arrives late', async () => {
+    let resolveHistory!: (value: ReturnType<typeof lastSession>[]) => void;
+    repo.getWorkoutHistory.mockImplementationOnce(() => new Promise((resolve) => { resolveHistory = resolve; }));
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    renderTraining();
+    await screen.findByText('Bench Press');
+    expect(screen.getAllByText('8 × 185 lb')).toHaveLength(3);
+    await act(async () => { resolveHistory([lastSession()]); });
+    expect(screen.getByText('9 × 195 lb')).toBeInTheDocument();
+    expect(screen.getByText('7 × 200 lb')).toBeInTheDocument();
+  });
+
+  it('preserves early RIR edits when localStorage writes fail', async () => {
+    const user = userEvent.setup();
+    const storage = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    try {
+      let resolveHistory!: (value: ReturnType<typeof lastSession>[]) => void;
+      repo.getWorkoutHistory.mockImplementationOnce(() => new Promise((resolve) => { resolveHistory = resolve; }));
+      repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+      renderTraining();
+      await screen.findByText('Bench Press');
+      await user.click(screen.getByLabelText('Increase RIR for set 1'));
+      await user.click(screen.getByLabelText('Increase RIR for set 1'));
+      await act(async () => { resolveHistory([lastSession()]); });
+      expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    } finally {
+      storage.mockRestore();
+    }
+  });
+
+  function lastSession() {
+    return {
+      id: 'h1',
+      loggedAt: '2020-01-06T12:00:00Z',
+      totalSets: 2,
+      completedSets: 2,
+      totalCardioMinutes: 0,
+      totalCardioMiles: 0,
+      date: '2020-01-06',
+      cardioExercises: [],
+      exercises: [
+        {
+          exercise: { id: 'bench-press', name: 'Bench Press', muscleGroup: 'Chest' },
+          targetSets: 2,
+          targetReps: 8,
+          targetWeight: 185,
+          sets: [
+            { reps: 9, weight: 195, rir: 2, completed: true },
+            { reps: 7, weight: 200, rir: 1, completed: true },
+          ],
+        },
+      ],
+    };
+  }
+
+  it('fills the seeded routine sets with last session reps, weight and RIR', async () => {
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    renderTraining();
+
+    expect(await screen.findByText('9 \u00d7 195 lb')).toBeInTheDocument();
+    expect(screen.getByText('7 \u00d7 200 lb')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 1 RIR 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 2 RIR 1')).toBeInTheDocument();
+    // Third routine set has no counterpart last time: keeps the routine target, no RIR.
+    expect(screen.getByText('8 \u00d7 185 lb')).toBeInTheDocument();
+    expect(screen.getByLabelText('Set 3 RIR not set')).toBeInTheDocument();
+  });
+
+  it('does not re-apply over edits after a remount', async () => {
+    const user = userEvent.setup();
+    repo.getWeeklyRoutines.mockResolvedValue(routinesWithTodayPreset());
+    repo.getWorkoutHistory.mockResolvedValue([lastSession()]);
+    const first = renderTraining();
+    await screen.findByText('9 \u00d7 195 lb');
+
+    await user.click(screen.getByLabelText('Increase RIR for set 1'));
+    expect(screen.getByLabelText('Set 1 RIR 3')).toBeInTheDocument();
+    first.unmount();
+
+    repo.getActiveWorkout.mockResolvedValue(null);
+    renderTraining();
+    expect(await screen.findByLabelText('Set 1 RIR 3')).toBeInTheDocument();
   });
 });

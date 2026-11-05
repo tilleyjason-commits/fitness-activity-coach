@@ -126,7 +126,7 @@ export function findLastPerformance(
     if (entry.date >= currentDate) continue;
     const match = entry.exercises.find((we) => we.exercise.id === exerciseId);
     if (!match) continue;
-    const completed = match.sets.filter((set) => set.completed);
+    const completed = match.sets.filter((set) => set.completed && set.setType !== 'warmup');
     if (completed.length === 0) continue;
     return completed.map((set) => ({ reps: set.reps, weight: set.weight, rir: set.rir }));
   }
@@ -134,13 +134,68 @@ export function findLastPerformance(
 }
 
 /**
- * The prior-session set to compare against for a given set index. A shorter
- * previous session falls back to its final set, so set 4 still has a reference
- * when last time only ran three.
+ * The prior-session set to compare against for a given set index. A set
+ * beyond the last session's count has no reference (null), so an extra set
+ * never borrows the final set's numbers.
  */
 export function pastSetForIndex(past: PastSet[] | null, setIndex: number): PastSet | null {
-  if (past === null || past.length === 0) return null;
-  return past[Math.min(setIndex, past.length - 1)];
+  if (past === null) return null;
+  return past[setIndex] ?? null;
+}
+
+/**
+ * Copy the previous session's reps / weight / RIR onto one exercise's sets.
+ * Working sets are matched to the prior session's working sets in order;
+ * warm-up sets, completed sets, sets beyond the prior count, and exercises
+ * already in progress (any completed set) are left untouched. Duration-based
+ * log types are skipped because PastSet carries no duration. Returns the
+ * original reference when nothing changes.
+ */
+export function prefillExerciseFromPrevious(
+  workoutExercise: WorkoutExercise,
+  history: WorkoutHistoryEntry[],
+  currentDate: string,
+): WorkoutExercise {
+  if (workoutExercise.logType === 'duration' || workoutExercise.logType === 'reps_duration') {
+    return workoutExercise;
+  }
+  if (workoutExercise.sets.some((set) => set.completed)) return workoutExercise;
+  const past = findLastPerformance(history, workoutExercise.exercise.id, currentDate);
+  if (!past) return workoutExercise;
+
+  let workingOrdinal = 0;
+  let changed = false;
+  const sets = workoutExercise.sets.map((set) => {
+    if (set.setType === 'warmup') return set;
+    const reference = past[workingOrdinal++];
+    if (!reference) return set;
+    if (
+      set.reps === reference.reps &&
+      set.weight === reference.weight &&
+      set.rir === reference.rir
+    ) {
+      return set;
+    }
+    changed = true;
+    return { ...set, reps: reference.reps, weight: reference.weight, rir: reference.rir };
+  });
+  return changed ? { ...workoutExercise, sets } : workoutExercise;
+}
+
+/** Prefill every exercise whose id is in `exerciseIds` (see prefillExerciseFromPrevious). */
+export function applyPreviousSessionToWorkout(
+  workout: WorkoutState,
+  history: WorkoutHistoryEntry[],
+  exerciseIds: ReadonlySet<string>,
+): WorkoutState {
+  let changed = false;
+  const exercises = workout.exercises.map((workoutExercise) => {
+    if (!exerciseIds.has(workoutExercise.exercise.id)) return workoutExercise;
+    const next = prefillExerciseFromPrevious(workoutExercise, history, workout.date);
+    if (next !== workoutExercise) changed = true;
+    return next;
+  });
+  return changed ? { ...workout, exercises } : workout;
 }
 
 /** Simple reps-then-weight double progression: one rep first, load once reps stall near failure. */
