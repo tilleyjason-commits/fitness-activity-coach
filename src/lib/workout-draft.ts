@@ -5,13 +5,37 @@
  * (Safari/PWA token refresh, tab eviction) remount TrainingPage before that
  * save lands, so the latest sets must live in localStorage first.
  */
-import type { WorkoutState } from './types';
-import { exerciseSlotKeys } from './workout-mappers';
+import type { Weekday, WorkoutState } from './types';
+import { exerciseSlotKeys, TRAINING_DAYS } from './workout-mappers';
 
 const DRAFT_PREFIX = 'fac-workout-draft-v1:';
+const SOURCE_DAY_PREFIX = 'fac-workout-source-day-v1:';
 
 export function workoutDraftKey(userId: string): string {
   return `${DRAFT_PREFIX}${userId}`;
+}
+
+function sourceDayKey(userId: string, date: string): string {
+  return `${SOURCE_DAY_PREFIX}${userId}:${date}`;
+}
+
+export function persistWorkoutSourceDay(userId: string, date: string, day: Weekday | null): void {
+  try {
+    const key = sourceDayKey(userId, date);
+    if (!day) localStorage.removeItem(key);
+    else localStorage.setItem(key, day);
+  } catch {
+    // Storage failures must never block starting a workout.
+  }
+}
+
+export function readWorkoutSourceDay(userId: string, date: string): Weekday | null {
+  try {
+    const value = localStorage.getItem(sourceDayKey(userId, date));
+    return TRAINING_DAYS.includes(value as Weekday) ? (value as Weekday) : null;
+  } catch {
+    return null;
+  }
 }
 
 function isWorkoutState(value: unknown): value is WorkoutState {
@@ -81,6 +105,11 @@ export function readPendingWorkoutPrefill(userId: string, workout: WorkoutState)
 export function clearWorkoutDraft(userId: string): void {
   try {
     localStorage.removeItem(workoutDraftKey(userId));
+    const prefix = `${SOURCE_DAY_PREFIX}${userId}:`;
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const key = localStorage.key(index);
+      if (key?.startsWith(prefix)) localStorage.removeItem(key);
+    }
   } catch {
     // Ignore storage failures on cleanup.
   }
