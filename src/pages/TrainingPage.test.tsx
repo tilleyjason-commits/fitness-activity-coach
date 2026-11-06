@@ -6,8 +6,8 @@ import { format } from 'date-fns';
 import { MemoryRouter } from 'react-router-dom';
 import TrainingPage from '~/pages/TrainingPage';
 import RoutinesPage from '~/pages/RoutinesPage';
-import { createEmptyWeeklyRoutines, getTodayWeekday } from '~/lib/workout-mappers';
-import type { WeeklyRoutines } from '~/lib/types';
+import { createEmptyWeeklyRoutines, getTodayWeekday, TRAINING_DAYS } from '~/lib/workout-mappers';
+import type { WeeklyRoutines, Weekday } from '~/lib/types';
 
 // Stable identity: TrainingPage keys effects on `user`, so the mock must not
 // return a fresh object per render (that would loop the load effect forever).
@@ -830,5 +830,166 @@ describe('duplicate exercise occurrences', () => {
     expect(screen.getByText('15 × 135 lb')).toBeInTheDocument();
     expect(screen.queryByText('12 × 115 lb')).not.toBeInTheDocument();
     expect(screen.getAllByText(/Last time:/)).toHaveLength(1);
+  });
+});
+
+function dayOtherThan(excluded: Weekday[]): Weekday {
+  const day = TRAINING_DAYS.find((candidate) => !excluded.includes(candidate));
+  if (!day) throw new Error('no remaining weekday');
+  return day;
+}
+
+function weeklyWithOtherDay(other: Weekday): WeeklyRoutines {
+  const weekly = createEmptyWeeklyRoutines();
+  weekly[other] = {
+    day: other,
+    name: 'Pull Day',
+    exercises: [
+      {
+        exercise: { id: 'row', name: 'Seated Row', muscleGroup: 'Back' },
+        targetSets: 3,
+        targetReps: 10,
+        targetWeight: 120,
+      },
+    ],
+    cardioExercises: [],
+  };
+  return weekly;
+}
+
+describe('select another day routine', () => {
+  it("starts another day's routine under today's date after today is already completed", async () => {
+    const user = userEvent.setup();
+    const other = dayOtherThan([getTodayWeekday()]);
+    const empty = dayOtherThan([getTodayWeekday(), other]);
+    repo.hasCompletedWorkout.mockResolvedValue(true);
+    repo.getWeeklyRoutines.mockResolvedValue(weeklyWithOtherDay(other));
+    renderTraining();
+
+    expect(await screen.findByRole('button', { name: `Start ${other}` })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Start ${empty}` })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+    const draft = JSON.parse(localStorage.getItem('fac-workout-draft-v1:user-abc') ?? '{}') as {
+      date?: string;
+    };
+    expect(draft.date).toBe(format(new Date(), 'yyyy-MM-dd'));
+  });
+
+  it("starts another day's routine before today's workout when today has no routine", async () => {
+    const user = userEvent.setup();
+    const other = dayOtherThan([getTodayWeekday()]);
+    const empty = dayOtherThan([getTodayWeekday(), other]);
+    repo.getWeeklyRoutines.mockResolvedValue(weeklyWithOtherDay(other));
+    renderTraining();
+
+    expect(await screen.findByRole('button', { name: `Start ${other}` })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Start ${empty}` })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+    const draft = JSON.parse(localStorage.getItem('fac-workout-draft-v1:user-abc') ?? '{}') as {
+      date?: string;
+    };
+    expect(draft.date).toBe(format(new Date(), 'yyyy-MM-dd'));
+  });
+
+  it('asks before replacing an open workout that already has a logged set', async () => {
+    const user = userEvent.setup();
+    const other = dayOtherThan([getTodayWeekday()]);
+    const weekly = routinesWithTodayPreset();
+    weekly[other] = weeklyWithOtherDay(other)[other];
+    repo.getWeeklyRoutines.mockResolvedValue(weekly);
+    renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+    await user.click(screen.getByRole('button', { name: 'Switch day' }));
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+
+    expect(screen.getByRole('dialog', { name: /replace this workout/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep this workout' }));
+    expect(screen.getByText('Bench Press')).toBeInTheDocument();
+    expect(screen.queryByText('Seated Row')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Switch day' }));
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+    await user.click(screen.getByRole('button', { name: 'Replace' }));
+
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+    expect(screen.queryByText('Bench Press')).not.toBeInTheDocument();
+    const draft = JSON.parse(localStorage.getItem('fac-workout-draft-v1:user-abc') ?? '{}') as {
+      date?: string;
+    };
+    expect(draft.date).toBe(format(new Date(), 'yyyy-MM-dd'));
+  });
+
+  it('replaces an open workout immediately when no sets are logged', async () => {
+    const user = userEvent.setup();
+    const other = dayOtherThan([getTodayWeekday()]);
+    const weekly = routinesWithTodayPreset();
+    weekly[other] = weeklyWithOtherDay(other)[other];
+    repo.getWeeklyRoutines.mockResolvedValue(weekly);
+    renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Switch day' }));
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+
+    expect(screen.queryByRole('dialog', { name: /replace this workout/i })).not.toBeInTheDocument();
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+    expect(screen.queryByText('Bench Press')).not.toBeInTheDocument();
+  });
+
+  it("saves a logged set onto the selected day's routine, not today's", async () => {
+    const user = userEvent.setup();
+    const other = dayOtherThan([getTodayWeekday()]);
+    const weekly = routinesWithTodayPreset();
+    weekly[other] = weeklyWithOtherDay(other)[other];
+    repo.getWeeklyRoutines.mockResolvedValue(weekly);
+    renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Switch day' }));
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+
+    await waitFor(() => expect(repo.saveRoutine).toHaveBeenCalled());
+    const saved = repo.saveRoutine.mock.calls.at(-1)?.[0] as {
+      day: Weekday;
+      exercises: Array<{ exercise: { id: string }; setTargets?: Array<{ reps: number; weight: number }> }>;
+    };
+    expect(saved.day).toBe(other);
+    expect(saved.exercises[0].exercise.id).toBe('row');
+    expect(saved.exercises[0].setTargets?.[0]).toEqual({ reps: 10, weight: 120 });
+    expect(repo.saveRoutine.mock.calls.some((call) => (call[0] as { day: Weekday }).day === getTodayWeekday())).toBe(false);
+  });
+
+  it("keeps saving logged sets to the selected day's routine after a remount", async () => {
+    const user = userEvent.setup();
+    const other = dayOtherThan([getTodayWeekday()]);
+    const weekly = routinesWithTodayPreset();
+    weekly[other] = weeklyWithOtherDay(other)[other];
+    repo.getWeeklyRoutines.mockResolvedValue(weekly);
+    const first = renderTraining();
+
+    expect(await screen.findByText('Bench Press')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Switch day' }));
+    await user.click(screen.getByRole('button', { name: `Start ${other}` }));
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+
+    first.unmount();
+    repo.saveRoutine.mockClear();
+    renderTraining();
+
+    expect(await screen.findByText('Seated Row')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /complete set 1/i }));
+
+    await waitFor(() => expect(repo.saveRoutine).toHaveBeenCalled());
+    expect((repo.saveRoutine.mock.calls.at(-1)?.[0] as { day: Weekday }).day).toBe(other);
   });
 });

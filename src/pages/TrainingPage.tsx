@@ -37,7 +37,9 @@ import {
   chooseWorkoutToRestore,
   clearWorkoutDraft,
   persistWorkoutDraft,
+  persistWorkoutSourceDay,
   readWorkoutDraft,
+  readWorkoutSourceDay,
   readPendingWorkoutPrefill,
 } from '~/lib/workout-draft';
 import {
@@ -53,6 +55,7 @@ import {
   exerciseSlotRebaseAfterRemoval,
   getTodayWeekday,
   getWorkoutTotals,
+  TRAINING_DAYS,
   isExercisePrefilled,
   replaceWorkoutWithRoutine,
   routineHasItems,
@@ -73,11 +76,40 @@ import type {
   CardioEquipment,
   DailyRoutine,
   Exercise,
+  Weekday,
+  WeeklyRoutines,
   WorkoutHistoryEntry,
   WorkoutState,
 } from '~/lib/types';
 
 type TrainingMode = 'workout' | 'history';
+
+function routinesWithExercises(weekly: WeeklyRoutines | null, excludeDay?: string): DailyRoutine[] {
+  if (!weekly) return [];
+  return TRAINING_DAYS.map((day) => weekly[day]).filter(
+    (routine) => routine.day !== excludeDay && routineHasItems(routine),
+  );
+}
+
+function OtherDayButtons({
+  routines,
+  onStart,
+}: {
+  routines: DailyRoutine[];
+  onStart: (routine: DailyRoutine) => void;
+}) {
+  return routines.map((routine) => (
+    <button
+      key={routine.day}
+      type="button"
+      aria-label={`Start ${routine.day}`}
+      onClick={() => onStart(routine)}
+      className="min-h-11 w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+    >
+      {routine.name ? `${routine.day} · ${routine.name}` : routine.day}
+    </button>
+  ));
+}
 
 /** Mirrors an exercise card: title, target line, then the set rows. */
 function LoadingSkeleton() {
@@ -117,7 +149,12 @@ export default function TrainingPage() {
   const [workout, setWorkout] = useState<WorkoutState | null>(null);
   const [completedToday, setCompletedToday] = useState(false);
   const [todayRoutine, setTodayRoutine] = useState<DailyRoutine | null>(null);
+  const [weeklyRoutines, setWeeklyRoutines] = useState<WeeklyRoutines | null>(null);
+  const [sourceDay, setSourceDay] = useState<Weekday | null>(null);
+  const [dayPickerOpen, setDayPickerOpen] = useState(false);
+  const [pendingReplace, setPendingReplace] = useState<DailyRoutine | null>(null);
   const todayRoutineRef = useRef<DailyRoutine | null>(null);
+  const sourceRoutineRef = useRef<DailyRoutine | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -146,10 +183,14 @@ export default function TrainingPage() {
   const restSecondsRef = useRef(0);
   const [finishing, setFinishing] = useState(false);
   const finishDialogRef = useRef<HTMLDivElement>(null);
+  const dayPickerRef = useRef<HTMLDivElement>(null);
+  const replaceDialogRef = useRef<HTMLDivElement>(null);
   const closeFinishDialog = useCallback(() => {
     if (!finishing) setConfirmFinish(false);
   }, [finishing]);
   useFocusTrap(finishDialogRef, confirmFinish && workout !== null, closeFinishDialog);
+  useFocusTrap(dayPickerRef, dayPickerOpen, () => setDayPickerOpen(false));
+  useFocusTrap(replaceDialogRef, pendingReplace !== null, () => setPendingReplace(null));
 
   // True when local workout state has edits not yet handed to the autosaver.
   const dirtyRef = useRef(false);
@@ -244,6 +285,7 @@ export default function TrainingPage() {
       const routinePreset = routine && routineHasItems(routine) ? routine : null;
       todayRoutineRef.current = routinePreset;
       setTodayRoutine(routinePreset);
+      setWeeklyRoutines(routines);
 
       const draft = readWorkoutDraft(user.id, today);
       const restored = chooseWorkoutToRestore({
@@ -256,6 +298,9 @@ export default function TrainingPage() {
         // Auto-populate the workout from today's routine preset — but never
         // after a completed workout: repeating a day is an explicit action.
         const seeded = replaceWorkoutWithRoutine(routinePreset, today);
+        setSourceDay(routinePreset.day);
+        sourceRoutineRef.current = routinePreset;
+        persistWorkoutSourceDay(user.id, today, routinePreset.day);
         const seededSlots = exerciseSlotKeys(seeded.exercises);
         pendingPrefillRef.current = new Map(
           seeded.exercises.map((we, index) => [seededSlots[index], JSON.stringify(we)]),
@@ -278,6 +323,14 @@ export default function TrainingPage() {
             )));
         }
         setWorkout(restored);
+        if (restored) {
+          const storedSource = readWorkoutSourceDay(user.id, today);
+          const storedRoutine = storedSource ? routines[storedSource] : null;
+          if (storedRoutine && routineHasItems(storedRoutine)) {
+            setSourceDay(storedRoutine.day);
+            sourceRoutineRef.current = storedRoutine;
+          }
+        }
         if (draft && restored === draft) {
           // Local edits beat a stale cloud snapshot; schedule a catch-up save.
           dirtyRef.current = true;
@@ -363,6 +416,11 @@ export default function TrainingPage() {
     prefilledExerciseIdsRef.current.clear();
     setDecisions({});
     if (user) clearPrefilledExercises(user.id, today);
+    setSourceDay(routine?.day ?? null);
+    sourceRoutineRef.current = routine ?? null;
+    if (user) persistWorkoutSourceDay(user.id, today, routine?.day ?? null);
+    setDayPickerOpen(false);
+    setPendingReplace(null);
     const next = routine
       ? replaceWorkoutWithRoutine(routine, today)
       : { exercises: [], cardioExercises: [], date: today };
@@ -371,6 +429,15 @@ export default function TrainingPage() {
     );
     if (user) persistWorkoutDraft(user.id, next, pendingPrefillRef.current);
     setWorkout(next);
+  }
+
+  function chooseOtherDay(routine: DailyRoutine) {
+    if (workout && getWorkoutTotals(workout).completedSets > 0) {
+      setDayPickerOpen(false);
+      setPendingReplace(routine);
+      return;
+    }
+    startWorkout(routine);
   }
 
   const addExercise = useCallback(
@@ -413,7 +480,7 @@ export default function TrainingPage() {
     (exIdx: number, setIdx: number, reps: number, weight: number, rir: number | null) => {
       mutateWorkout((current) => updateSetRecord(current, exIdx, setIdx, { reps, weight, rir }));
       const exerciseId = workout?.exercises[exIdx]?.exercise.id;
-      const currentRoutine = todayRoutineRef.current;
+      const currentRoutine = sourceRoutineRef.current ?? todayRoutineRef.current;
       if (exerciseId && currentRoutine) {
         const nextRoutine = applyCompletedSetToRoutine(
           currentRoutine,
@@ -424,8 +491,15 @@ export default function TrainingPage() {
           exIdx,
         );
         if (nextRoutine !== currentRoutine) {
-          todayRoutineRef.current = nextRoutine;
-          setTodayRoutine(nextRoutine);
+          sourceRoutineRef.current = nextRoutine;
+          if (nextRoutine.day === getTodayWeekday()) {
+            todayRoutineRef.current = nextRoutine;
+            setTodayRoutine(nextRoutine);
+          } else {
+            setWeeklyRoutines((current) =>
+              current ? { ...current, [nextRoutine.day]: nextRoutine } : current,
+            );
+          }
           routineAutosaveRef.current?.schedule(nextRoutine);
         }
       }
@@ -667,6 +741,12 @@ export default function TrainingPage() {
                       Repeat today&apos;s routine
                     </button>
                   )}
+                  {routinesWithExercises(weeklyRoutines, getTodayWeekday()).length > 0 && (
+                    <OtherDayButtons
+                      routines={routinesWithExercises(weeklyRoutines, getTodayWeekday())}
+                      onStart={startWorkout}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => startWorkout()}
@@ -681,10 +761,16 @@ export default function TrainingPage() {
                 <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
                   No routine for today. Set one up in Routines to auto-load your workout, or start a blank one.
                 </p>
-                <button type="button" onClick={() => startWorkout()} className="btn-primary">
-                  <Play className="h-4 w-4" aria-hidden />
-                  Start Blank Workout
-                </button>
+                <div className="flex flex-col gap-2">
+                  <OtherDayButtons
+                    routines={routinesWithExercises(weeklyRoutines, getTodayWeekday())}
+                    onStart={startWorkout}
+                  />
+                  <button type="button" onClick={() => startWorkout()} className="btn-primary">
+                    <Play className="h-4 w-4" aria-hidden />
+                    Start Blank Workout
+                  </button>
+                </div>
               </>
             )}
           </div>
@@ -735,6 +821,15 @@ export default function TrainingPage() {
             <div className="flex gap-2">
               <button type="button" className="min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={layout === 'list'} onClick={() => setLayout('list')}>List</button>
               <button type="button" className="min-h-11 rounded-xl px-3 text-sm font-semibold" aria-pressed={layout === 'focus'} onClick={() => setLayout('focus')}>Focus</button>
+              {routinesWithExercises(weeklyRoutines, sourceDay ?? undefined).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDayPickerOpen(true)}
+                  className="min-h-11 rounded-xl px-3 text-sm font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  Switch day
+                </button>
+              )}
             </div>
           </section>
 
@@ -800,6 +895,75 @@ export default function TrainingPage() {
               Finish Workout
             </button>
           )}
+        </div>
+      )}
+
+      {dayPickerOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-6">
+          <div
+            ref={dayPickerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="switch-day-title"
+            tabIndex={-1}
+            className="card w-full max-w-sm text-center shadow-xl"
+          >
+            <h3 id="switch-day-title" className="mb-1 text-base font-bold">
+              Switch day
+            </h3>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+              Start another day&apos;s routine as today&apos;s workout.
+            </p>
+            <div className="mb-3 flex flex-col gap-2">
+              <OtherDayButtons
+                routines={routinesWithExercises(weeklyRoutines, sourceDay ?? undefined)}
+                onStart={chooseOtherDay}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setDayPickerOpen(false)}
+              className="min-h-11 w-full rounded-xl bg-slate-200 py-2.5 text-sm font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {pendingReplace && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-6">
+          <div
+            ref={replaceDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="replace-workout-title"
+            tabIndex={-1}
+            className="card w-full max-w-sm text-center shadow-xl"
+          >
+            <h3 id="replace-workout-title" className="mb-1 text-base font-bold">
+              Replace this workout?
+            </h3>
+            <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+              Logged sets will be discarded. {pendingReplace.day}&apos;s routine will start as today&apos;s workout.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingReplace(null)}
+                className="min-h-11 flex-1 rounded-xl bg-slate-200 py-2.5 text-sm font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+              >
+                Keep this workout
+              </button>
+              <button
+                type="button"
+                onClick={() => startWorkout(pendingReplace)}
+                className="min-h-11 flex-1 rounded-xl bg-emerald-700 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800"
+              >
+                Replace
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
